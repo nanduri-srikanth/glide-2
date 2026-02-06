@@ -78,6 +78,7 @@ const CREATE_ACTIONS_TABLE = `
     description TEXT,
     scheduled_date TEXT,
     created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
     sync_status TEXT DEFAULT 'synced'
   )
 `;
@@ -203,12 +204,19 @@ function runMigrations(db: SQLite.SQLiteDatabase): void {
 
   // Actions table migrations
   if (tableExists(db, 'actions')) {
-    if (!columnExists(db, 'actions', 'sync_status')) {
-      try {
-        db.execSync("ALTER TABLE actions ADD COLUMN sync_status TEXT DEFAULT 'synced'");
-        console.log('[Database] Added column actions.sync_status');
-      } catch (err) {
-        console.warn('[Database] Failed to add column actions.sync_status:', err);
+    const actionColumns = [
+      { name: 'sync_status', sql: "ALTER TABLE actions ADD COLUMN sync_status TEXT DEFAULT 'synced'" },
+      { name: 'updated_at', sql: "ALTER TABLE actions ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''" },
+    ];
+
+    for (const { name, sql } of actionColumns) {
+      if (!columnExists(db, 'actions', name)) {
+        try {
+          db.execSync(sql);
+          console.log(`[Database] Added column actions.${name}`);
+        } catch (err) {
+          console.warn(`[Database] Failed to add column actions.${name}:`, err);
+        }
       }
     }
   }
