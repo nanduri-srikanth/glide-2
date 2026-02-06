@@ -1,0 +1,103 @@
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# typescript
+*.tsbuildinfo
+
+app-example
+
+# Python
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+.venv/
+ENV/
+backend/venv/
+backend/.venv/
+
+# Environment files - NEVER commit these
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+*.env
+
+# Secrets and credentials
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+credentials/
+.secrets
+
+# Node
+node_modules/
+
+# Expo
+.expo/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Misc
+.DS_Store
+*.log
+Thumbs.db
+
+# Build outputs
+build/
+dist/
+*.egg-info/
+
+# Xcode build directories
+DerivedData/
+.build/
+*.xcuserstate
+*.xcuserdatad/
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/

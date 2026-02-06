@@ -1,0 +1,473 @@
+/**
+ * Repository Unit Tests
+ *
+ * Unit tests for database repositories.
+ * These tests can be run with Jest or similar testing frameworks.
+ *
+ * Note: These tests require a mock SQLite implementation.
+ * In production, you would use expo-sqlite's Jest mock.
+ */
+
+import {
+  noteRepository,
+  folderRepository,
+  actionRepository,
+  syncQueueRepository,
+  databaseManager,
+} from '../index';
+
+// Mock the database manager
+jest.mock('@/services/database');
+
+describe('NoteRepository', () => {
+  const mockUserId = 'test-user-123';
+  const mockFolderId = 'test-folder-123';
+
+  beforeEach(() => {
+    // Clear all mocks before each test
+    jest.clearAllMocks();
+  });
+
+  describe('create', () => {
+    it('should create a new note with generated ID', async () => {
+      const input = {
+        user_id: mockUserId,
+        folderId: mockFolderId,
+        title: 'Test Note',
+        transcript: 'Test transcript content',
+        tags: ['tag1', 'tag2'],
+        isPinned: false,
+        is_archived: false,
+        is_deleted: false,
+        ai_processed: false,
+        ai_metadata: {},
+      };
+
+      // Mock database response
+      const mockDb = {
+        runAsync: jest.fn().mockResolvedValue({ changes: 1 }),
+      };
+      (databaseManager.getDatabase as jest.Mock).mockResolvedValue(mockDb);
+
+      const note = await noteRepository.create(input);
+
+      expect(note).toHaveProperty('id');
+      expect(note.title).toBe(input.title);
+      expect(note.transcript).toBe(input.transcript);
+      expect(note.user_id).toBe(mockUserId);
+      expect(mockDb.runAsync).toHaveBeenCalled();
+    });
+  });
+
+  describe('getById', () => {
+    it('should retrieve a note by ID', async () => {
+      const mockNote = {
+        id: 'note-123',
+        user_id: mockUserId,
+        folder_id: mockFolderId,
+        title: 'Test Note',
+        transcript: 'Test transcript',
+        tags: '[]',
+        is_pinned: 0,
+        is_archived: 0,
+        is_deleted: 0,
+        ai_processed: 0,
+        ai_metadata: '{}',
+        created_at: '2024-01-01T00:00:00.000Z',
+        updated_at: '2024-01-01T00:00:00.000Z',
+      };
+
+      const mockDb = {
+        getFirstAsync: jest.fn().mockResolvedValue(mockNote),
+      };
+      (databaseManager.getDatabase as jest.Mock).mockResolvedValue(mockDb);
+
+      const note = await noteRepository.getById('note-123');
+
+      expect(note).not.toBeNull();
+      expect(note?.id).toBe('note-123');
+      expect(mockDb.getFirstAsync).toHaveBeenCalledWith(
+        'SELECT * FROM notes WHERE id = ?',
+        ['note-123']
+      );
+    });
+
+    it('should return null if note not found', async () => {
+      const mockDb = {
+        getFirstAsync: jest.fn().mockResolvedValue(null),
+      };
+      (databaseManager.getDatabase as jest.Mock).mockResolvedValue(mockDb);
+
+      const note = await noteRepository.getById('nonexistent');
+
+      expect(note).toBeNull();
+    });
+  });
+
+  describe('getAll', () => {
+    it('should retrieve all notes with filters', async () => {
+      const mockNotes = [
+        {
+          id: 'note-1',
+          user_id: mockUserId,
+          title: 'Note 1',
+          transcript: 'Transcript 1',
+          tags: '[]',
+          is_pinned: 0,
+          is_archived: 0,
+          is_deleted: 0,
+          ai_processed: 0,
+          ai_metadata: '{}',
+          created_at: '2024-01-01T00:00:00.000Z',
+          updated_at: '2024-01-01T00:00:00.000Z',
+        },
+      ];
+
+      const mockDb = {
+        getAllAsync: jest.fn().mockResolvedValue(mockNotes),
+      };
+      (databaseManager.getDatabase as jest.Mock).mockResolvedValue(mockDb);
+
+      const notes = await noteRepository.getAll({
+        userId: mockUserId,
+        isDeleted: false,
+        limit: 10,
+      });
+
+      expect(notes).toHaveLength(1);
+      expect(notes[0].id).toBe('note-1');
+      expect(mockDb.getAllAsync).toHaveBeenCalled();
+    });
+  });
+
+  describe('update', () => {
+    it('should update an existing note', async () => {
+      const existingNote = {
+        id: 'note-123',
+        user_id: mockUserId,
+        folderId: mockFolderId,
+        title: 'Old Title',
+        transcript: 'Old transcript',
+        tags: [],
+        isPinned: false,
+        is_archived: false,
+        is_deleted: false,
+        ai_processed: false,
+        ai_metadata: {},
+        created_at: '2024-01-01T00:00:00.000Z',
+        updated_at: '2024-01-01T00:00:00.000Z',
+      };
+
+      const mockDb = {
+        getFirstAsync: jest.fn(),
+        runAsync: jest.fn().mockResolvedValue({ changes: 1 }),
+      };
+
+      // Mock getById to return existing note
+      mockDb.getFirstAsync.mockResolvedValueOnce({
+        id: 'note-123',
+        user_id: mockUserId,
+        folder_id: mockFolderId,
+        title: 'Old Title',
+        transcript: 'Old transcript',
+        tags: '[]',
+        is_pinned: 0,
+        is_archived: 0,
+        is_deleted: 0,
+        ai_processed: 0,
+        ai_metadata: '{}',
+        created_at: '2024-01-01T00:00:00.000Z',
+        updated_at: '2024-01-01T00:00:00.000Z',
+      });
+
+      (databaseManager.getDatabase as jest.Mock).mockResolvedValue(mockDb);
+
+      const updated = await noteRepository.update('note-123', {
+        title: 'New Title',
+      });
+
+      expect(updated).not.toBeNull();
+      expect(updated?.title).toBe('New Title');
+      expect(mockDb.runAsync).toHaveBeenCalled();
+    });
+  });
+
+  describe('softDelete', () => {
+    it('should soft delete a note', async () => {
+      const mockDb = {
+        getFirstAsync: jest.fn().mockResolvedValue({
+          id: 'note-123',
+          user_id: mockUserId,
+          title: 'Test',
+          transcript: 'Test',
+          tags: '[]',
+          is_pinned: 0,
+          is_archived: 0,
+          is_deleted: 0,
+          ai_processed: 0,
+          ai_metadata: '{}',
+          created_at: '2024-01-01T00:00:00.000Z',
+          updated_at: '2024-01-01T00:00:00.000Z',
+        }),
+        runAsync: jest.fn().mockResolvedValue({ changes: 1 }),
+      };
+
+      (databaseManager.getDatabase as jest.Mock).mockResolvedValue(mockDb);
+
+      const deleted = await noteRepository.softDelete('note-123');
+
+      expect(deleted).not.toBeNull();
+      expect(deleted?.is_deleted).toBe(true);
+      expect(deleted?.deleted_at).not.toBeNull();
+    });
+  });
+
+  describe('search', () => {
+    it('should search notes by query', async () => {
+      const mockDb = {
+        getAllAsync: jest.fn().mockResolvedValue([]),
+      };
+      (databaseManager.getDatabase as jest.Mock).mockResolvedValue(mockDb);
+
+      await noteRepository.search('test query', mockUserId);
+
+      expect(mockDb.getAllAsync).toHaveBeenCalled();
+      const callArgs = mockDb.getAllAsync.mock.calls[0];
+      expect(callArgs[1]).toContain('%test query%');
+    });
+  });
+});
+
+describe('FolderRepository', () => {
+  const mockUserId = 'test-user-123';
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('create', () => {
+    it('should create a new folder', async () => {
+      const input = {
+        user_id: mockUserId,
+        name: 'Test Folder',
+        icon: 'folder.fill',
+        isSystem: false,
+        sortOrder: 0,
+        parentId: null,
+        depth: 0,
+      };
+
+      const mockDb = {
+        runAsync: jest.fn().mockResolvedValue({ changes: 1 }),
+        getFirstAsync: jest.fn().mockResolvedValue({ count: 0 }),
+      };
+      (databaseManager.getDatabase as jest.Mock).mockResolvedValue(mockDb);
+
+      const folder = await folderRepository.create(input);
+
+      expect(folder).toHaveProperty('id');
+      expect(folder.name).toBe(input.name);
+      expect(mockDb.runAsync).toHaveBeenCalled();
+    });
+  });
+
+  describe('getChildren', () => {
+    it('should retrieve child folders', async () => {
+      const mockDb = {
+        getAllAsync: jest.fn().mockResolvedValue([]),
+        getFirstAsync: jest.fn().mockResolvedValue({ count: 0 }),
+      };
+      (databaseManager.getDatabase as jest.Mock).mockResolvedValue(mockDb);
+
+      await folderRepository.getChildren('parent-folder-123');
+
+      expect(mockDb.getAllAsync).toHaveBeenCalled();
+    });
+  });
+});
+
+describe('ActionRepository', () => {
+  const mockNoteId = 'test-note-123';
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('create', () => {
+    it('should create a new action', async () => {
+      const input = {
+        note_id: mockNoteId,
+        action_type: 'reminder' as const,
+        status: 'pending' as const,
+        priority: 'medium' as const,
+        title: 'Test Reminder',
+        details: {},
+        attendees: [],
+      };
+
+      const mockDb = {
+        runAsync: jest.fn().mockResolvedValue({ changes: 1 }),
+      };
+      (databaseManager.getDatabase as jest.Mock).mockResolvedValue(mockDb);
+
+      const action = await actionRepository.create(input);
+
+      expect(action).toHaveProperty('id');
+      expect(action.title).toBe(input.title);
+      expect(action.action_type).toBe('reminder');
+    });
+  });
+
+  describe('getByNoteId', () => {
+    it('should retrieve all actions for a note', async () => {
+      const mockDb = {
+        getAllAsync: jest.fn().mockResolvedValue([]),
+      };
+      (databaseManager.getDatabase as jest.Mock).mockResolvedValue(mockDb);
+
+      await actionRepository.getByNoteId(mockNoteId);
+
+      expect(mockDb.getAllAsync).toHaveBeenCalled();
+    });
+  });
+
+  describe('markAsExecuted', () => {
+    it('should mark an action as executed', async () => {
+      const mockAction = {
+        id: 'action-123',
+        note_id: mockNoteId,
+        action_type: 'reminder',
+        status: 'pending',
+        priority: 'medium',
+        title: 'Test',
+        details: '{}',
+        attendees: '[]',
+        created_at: '2024-01-01T00:00:00.000Z',
+        updated_at: '2024-01-01T00:00:00.000Z',
+      };
+
+      const mockDb = {
+        getFirstAsync: jest.fn().mockResolvedValue(mockAction),
+        runAsync: jest.fn().mockResolvedValue({ changes: 1 }),
+      };
+
+      (databaseManager.getDatabase as jest.Mock).mockResolvedValue(mockDb);
+
+      const executed = await actionRepository.markAsExecuted('action-123');
+
+      expect(executed).not.toBeNull();
+      expect(executed?.status).toBe('executed');
+      expect(executed?.executed_at).not.toBeNull();
+    });
+  });
+});
+
+describe('SyncQueueRepository', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('add', () => {
+    it('should add an item to sync queue', async () => {
+      const input = {
+        table_name: 'notes',
+        record_id: 'note-123',
+        operation: 'create' as const,
+        data: { title: 'Test Note' },
+      };
+
+      const mockDb = {
+        runAsync: jest.fn().mockResolvedValue({ changes: 1 }),
+      };
+      (databaseManager.getDatabase as jest.Mock).mockResolvedValue(mockDb);
+
+      const item = await syncQueueRepository.add(input);
+
+      expect(item).toHaveProperty('id');
+      expect(item.table_name).toBe('notes');
+      expect(item.operation).toBe('create');
+      expect(item.status).toBe('pending');
+    });
+  });
+
+  describe('getPending', () => {
+    it('should retrieve pending sync items', async () => {
+      const mockDb = {
+        getAllAsync: jest.fn().mockResolvedValue([]),
+      };
+      (databaseManager.getDatabase as jest.Mock).mockResolvedValue(mockDb);
+
+      await syncQueueRepository.getPending(50);
+
+      expect(mockDb.getAllAsync).toHaveBeenCalled();
+    });
+  });
+
+  describe('markCompleted', () => {
+    it('should mark a sync item as completed', async () => {
+      const mockItem = {
+        id: 'sync-123',
+        table_name: 'notes',
+        record_id: 'note-123',
+        operation: 'create',
+        data: '{}',
+        created_at: '2024-01-01T00:00:00.000Z',
+        attempts: 0,
+        status: 'pending',
+      };
+
+      const mockDb = {
+        getFirstAsync: jest.fn().mockResolvedValue(mockItem),
+        runAsync: jest.fn().mockResolvedValue({ changes: 1 }),
+      };
+
+      (databaseManager.getDatabase as jest.Mock).mockResolvedValue(mockDb);
+
+      const completed = await syncQueueRepository.markCompleted('sync-123');
+
+      expect(completed).not.toBeNull();
+      expect(completed?.status).toBe('completed');
+    });
+  });
+});
+
+describe('DatabaseManager', () => {
+  describe('initialize', () => {
+    it('should initialize the database', async () => {
+      const mockDb = {
+        execAsync: jest.fn().mockResolvedValue(undefined),
+        getFirstAsync: jest.fn().mockResolvedValue({ user_version: 0 }),
+      };
+
+      // Mock SQLite.openDatabaseAsync
+      jest.doMock('expo-sqlite', () => ({
+        openDatabaseAsync: jest.fn().mockResolvedValue(mockDb),
+      }));
+
+      await databaseManager.initialize();
+
+      expect(mockDb.execAsync).toHaveBeenCalledWith('PRAGMA foreign_keys = ON;');
+    });
+  });
+
+  describe('getStats', () => {
+    it('should return database statistics', async () => {
+      const mockDb = {
+        getFirstAsync: jest.fn()
+          .mockResolvedValueOnce({ count: 10 }) // notes
+          .mockResolvedValueOnce({ count: 5 })  // folders
+          .mockResolvedValueOnce({ count: 20 }) // actions
+          .mockResolvedValueOnce({ count: 2 }), // sync_queue
+      };
+
+      (databaseManager.getDatabase as jest.Mock).mockResolvedValue(mockDb);
+
+      const stats = await databaseManager.getStats();
+
+      expect(stats.notesCount).toBe(10);
+      expect(stats.foldersCount).toBe(5);
+      expect(stats.actionsCount).toBe(20);
+      expect(stats.syncQueueCount).toBe(2);
+    });
+  });
+});
