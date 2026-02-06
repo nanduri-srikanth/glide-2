@@ -137,6 +137,15 @@ class NotesService {
     return { data: response.data };
   }
 
+  async listAllNotes(page: number = 1, perPage: number = 50): Promise<{ data?: NoteListResponse; error?: string }> {
+    const params = new URLSearchParams();
+    params.append('page', String(page));
+    params.append('per_page', String(perPage));
+    const response = await api.get<NoteListResponse>(`/notes/all?${params.toString()}`);
+    if (response.error) return { error: response.error.message };
+    return { data: response.data };
+  }
+
   async getNote(noteId: string): Promise<{ data?: NoteDetailResponse; error?: string }> {
     const response = await api.get<NoteDetailResponse>(`/notes/${noteId}`);
     if (response.error) return { error: response.error.message };
