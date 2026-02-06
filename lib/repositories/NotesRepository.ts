@@ -353,6 +353,7 @@ class NotesRepository extends BaseRepository<NoteRow, NoteInsert, typeof notes> 
         description: action.description,
         scheduled_date: action.scheduled_date,
         created_at: action.created_at,
+        updated_at: action.created_at,
         sync_status: 'synced',
       });
     }

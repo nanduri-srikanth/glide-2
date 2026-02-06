@@ -50,6 +50,7 @@ export const actions = sqliteTable('actions', {
   description: text('description'),
   scheduled_date: text('scheduled_date'),
   created_at: text('created_at').notNull(),
+  updated_at: text('updated_at').notNull(),
   sync_status: text('sync_status').$type<SyncStatus>().default('synced'),
 });
 
