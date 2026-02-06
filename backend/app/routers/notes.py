@@ -24,7 +24,7 @@ from app.schemas.note_schemas import (
     FolderResponse,
     UnifiedSearchResponse,
 )
-from app.core.errors import NotFoundError, ExternalServiceError
+from app.core.errors import NotFoundError, ExternalServiceError, ConflictError, ErrorCode
 
 logger = logging.getLogger(__name__)
 
@@ -347,6 +347,26 @@ async def create_note(
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new note manually (non-voice)."""
+    # Idempotency for offline-created notes
+    if note_data.client_id:
+        existing = await db.execute(
+            select(Note)
+            .options(selectinload(Note.actions), selectinload(Note.folder))
+            .where(Note.id == note_data.client_id)
+        )
+        existing_note = existing.scalar_one_or_none()
+        if existing_note:
+            if existing_note.user_id != current_user.id:
+                raise ConflictError(
+                    message="Note ID already exists",
+                    code=ErrorCode.CONFLICT_RESOURCE_EXISTS,
+                    param="client_id",
+                )
+            response = NoteResponse.model_validate(existing_note)
+            if existing_note.folder:
+                response.folder_name = existing_note.folder.name
+            return response
+
     # Verify folder exists if provided
     if note_data.folder_id:
         result = await db.execute(
@@ -364,6 +384,8 @@ async def create_note(
         folder_id=note_data.folder_id,
         tags=note_data.tags or [],
     )
+    if note_data.client_id:
+        note.id = note_data.client_id
     db.add(note)
     await db.commit()
     await db.refresh(note)

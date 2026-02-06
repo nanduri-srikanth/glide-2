@@ -168,6 +168,7 @@ class SyncEngine {
     switch (operation) {
       case 'create': {
         const result = await notesService.createNote({
+          client_id: entity_id,
           title: payload?.title || 'Untitled',
           transcript: payload?.transcript || '',
           folder_id: payload?.folder_id,
@@ -212,6 +213,7 @@ class SyncEngine {
     switch (operation) {
       case 'create': {
         const result = await notesService.createFolder({
+          client_id: entity_id,
           name: payload?.name || 'New Folder',
           icon: payload?.icon || 'folder',
           color: payload?.color,

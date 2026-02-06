@@ -137,11 +137,13 @@ class NotesService {
     return { data: response.data };
   }
 
-  async listAllNotes(page: number = 1, perPage: number = 50): Promise<{ data?: NoteListResponse; error?: string }> {
+  async listAllNotes(page?: number, perPage?: number): Promise<{ data?: NoteListResponse; error?: string }> {
     const params = new URLSearchParams();
-    params.append('page', String(page));
-    params.append('per_page', String(perPage));
-    const response = await api.get<NoteListResponse>(`/notes/all?${params.toString()}`);
+    if (page) params.append('page', String(page));
+    if (perPage) params.append('per_page', String(perPage));
+    const queryString = params.toString();
+    const endpoint = queryString ? `/notes/all?${queryString}` : '/notes/all';
+    const response = await api.get<NoteListResponse>(endpoint);
     if (response.error) return { error: response.error.message };
     return { data: response.data };
   }
@@ -152,7 +154,7 @@ class NotesService {
     return { data: response.data };
   }
 
-  async createNote(data: { title: string; transcript: string; folder_id?: string; tags?: string[] }): Promise<{ data?: NoteDetailResponse; error?: string }> {
+  async createNote(data: { title: string; transcript: string; folder_id?: string; tags?: string[]; client_id?: string }): Promise<{ data?: NoteDetailResponse; error?: string }> {
     const response = await api.post<NoteDetailResponse>('/notes', data);
     if (response.error) return { error: response.error.message };
     return { data: response.data };
@@ -195,7 +197,7 @@ class NotesService {
     return { data: response.data };
   }
 
-  async createFolder(data: { name: string; icon?: string; color?: string }): Promise<{ data?: FolderResponse; error?: string }> {
+  async createFolder(data: { name: string; icon?: string; color?: string; client_id?: string; parent_id?: string | null }): Promise<{ data?: FolderResponse; error?: string }> {
     const response = await api.post<FolderResponse>('/folders', data);
     if (response.error) return { error: response.error.message };
     return { data: response.data };

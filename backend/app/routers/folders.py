@@ -140,6 +140,23 @@ async def create_folder(
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new folder."""
+    # Idempotency for offline-created folders
+    if folder_data.client_id:
+        existing = await db.execute(
+            select(Folder)
+            .where(Folder.id == folder_data.client_id)
+        )
+        existing_folder = existing.scalar_one_or_none()
+        if existing_folder:
+            if existing_folder.user_id != current_user.id:
+                raise ConflictError(
+                    message="Folder ID already exists",
+                    code=ErrorCode.CONFLICT_RESOURCE_EXISTS,
+                    param="client_id",
+                )
+            response = FolderResponse.model_validate(existing_folder)
+            return response
+
     # Check for duplicate name
     result = await db.execute(
         select(Folder)
@@ -187,6 +204,8 @@ async def create_folder(
         parent_id=parent_id,
         depth=depth,
     )
+    if folder_data.client_id:
+        folder.id = folder_data.client_id
     db.add(folder)
     await db.commit()
     await db.refresh(folder)

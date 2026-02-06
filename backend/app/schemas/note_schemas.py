@@ -13,6 +13,7 @@ class FolderCreate(BaseModel):
     icon: str = Field(default="folder.fill", max_length=50)
     color: Optional[str] = Field(None, pattern=r"^#[0-9A-Fa-f]{6}$")
     parent_id: Optional[UUID] = None
+    client_id: Optional[UUID] = None
 
 
 class FolderUpdate(BaseModel):
@@ -59,6 +60,7 @@ class NoteCreate(BaseModel):
     transcript: str
     folder_id: Optional[UUID] = None
     tags: List[str] = Field(default=[])
+    client_id: Optional[UUID] = None
 
 
 class NoteUpdate(BaseModel):
