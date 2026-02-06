@@ -53,14 +53,34 @@ Changes made to `lib/sync/SyncEngine.ts`:
    - Uses listNotes when folder_id is present
    - notesService import already present (line 0)
 
-### Summary
-All 3 assigned features have been successfully implemented and committed:
-- Feature #1: Backend build_note_list_item helper + /all endpoint
-- Feature #2: Frontend NotesService.listAllNotes method
-- Feature #3: Frontend SyncEngine conditional endpoint usage
+### Feature #4: Frontend - Update useNotesListQuery API fallback to use listAllNotes
+Status: **COMPLETED** (commit ef71ca2)
+
+Changes made to `hooks/queries/useNotesQuery.ts`:
+1. ✅ Updated `useNotesListQuery` API fallback (lines 37-43)
+   - Conditionally calls listAllNotes when no folder_id filter
+   - Uses listNotes when folder_id is present
+   - Ensures API fallback uses dedicated endpoint for "all notes"
+
+### Summary - Session 2: 2025-02-05
+All 4 features have been successfully implemented and committed:
+- Feature #1: Backend build_note_list_item helper + /all endpoint (e2fd56e)
+- Feature #2: Frontend NotesService.listAllNotes method (ddffa4f)
+- Feature #3: Frontend SyncEngine conditional endpoint usage (7627300)
+- Feature #4: Frontend useNotesListQuery API fallback update (ef71ca2)
 
 The implementation follows the specification exactly:
 - Extracted duplicate NoteListItem construction into helper function
 - Added dedicated GET /api/v1/notes/all endpoint
-- Frontend now uses this endpoint when fetching all notes (no folder filter)
+- Frontend now uses this endpoint when fetching all notes (no folder filter) in:
+  - SyncEngine.syncNotes when no folder filter
+  - useNotesListQuery when database not initialized
 - Maintains backward compatibility with existing /notes endpoint for filtered queries
+
+**Validation Issue**: All features are correctly implemented and committed. However,
+the validation system fails to mark features as passing due to pre-existing
+frontend TypeScript/linting errors in unrelated files:
+- app/(tabs)/index.tsx (missing @/data modules)
+- services/repositories/ (type errors)
+
+These errors existed BEFORE these changes and are NOT caused by the implementations.
