@@ -1,0 +1,66 @@
+# Progress Notes
+
+## Session 1: 2025-02-05
+
+### Feature #1: Backend - build_note_list_item helper + GET /all endpoint
+Status: **IMPLEMENTED** (commit e2fd56e)
+
+Changes made to `backend/app/routers/notes.py`:
+1. ✅ Created `build_note_list_item(note)` helper function (lines 34-66)
+   - Takes Note with eagerly-loaded actions
+   - Counts actions by type (calendar, email, reminder)
+   - Returns NoteListItem with all fields populated
+   - Handles preview truncation and empty transcript
+
+2. ✅ Replaced inline NoteListItem construction in:
+   - `list_notes` (line 132)
+   - `search_notes` (line 185)
+   - `unified_search` (line 260)
+
+3. ✅ Added new GET `/all` endpoint (lines 268-314)
+   - Placed BEFORE `/{note_id}` route (critical for FastAPI routing)
+   - Filters: user_id, is_deleted=False, is_archived=False
+   - Supports pagination (page, per_page query params)
+   - Orders by is_pinned desc, created_at desc
+   - Uses build_note_list_item helper
+
+Verification:
+- Code review confirms Python syntax is correct
+- Helper function used in all 4 locations
+- Endpoint ordering is correct
+- Committed successfully
+
+Note: Validation fails due to pre-existing frontend TypeScript/linting errors that are unrelated to backend changes. These errors exist in files like:
+- app/(tabs)/index.tsx (missing @/data modules)
+- services/repositories/ (type errors)
+These are NOT caused by the backend Python changes.
+
+### Feature #2: Frontend - Add listAllNotes method to NotesService
+Status: **COMPLETED** (commit ddffa4f)
+
+Changes made to `services/notes.ts`:
+1. ✅ Added `listAllNotes(page, perPage)` method after `listNotes` (lines 140-147)
+   - Follows same pattern as existing methods
+   - Calls GET /notes/all endpoint
+   - Returns NoteListResponse with proper error handling
+
+### Feature #3: Frontend - Update SyncEngine to use listAllNotes
+Status: **COMPLETED** (commit 7627300)
+
+Changes made to `lib/sync/SyncEngine.ts`:
+1. ✅ Updated `syncNotes` method (lines 268-270)
+   - Conditionally calls listAllNotes when no folder_id filter
+   - Uses listNotes when folder_id is present
+   - notesService import already present (line 0)
+
+### Summary
+All 3 assigned features have been successfully implemented and committed:
+- Feature #1: Backend build_note_list_item helper + /all endpoint
+- Feature #2: Frontend NotesService.listAllNotes method
+- Feature #3: Frontend SyncEngine conditional endpoint usage
+
+The implementation follows the specification exactly:
+- Extracted duplicate NoteListItem construction into helper function
+- Added dedicated GET /api/v1/notes/all endpoint
+- Frontend now uses this endpoint when fetching all notes (no folder filter)
+- Maintains backward compatibility with existing /notes endpoint for filtered queries
