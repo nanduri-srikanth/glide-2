@@ -69,10 +69,21 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   // Sync when coming online
   useEffect(() => {
     if (isOnline && user?.id) {
-      syncEngine.triggerSync();
+      syncEngine.fullSync().catch(console.warn);
       // Also process audio upload queue
       audioUploader.processQueue().catch(console.warn);
     }
+  }, [isOnline, user?.id]);
+
+  // Background refresh every minute when online
+  useEffect(() => {
+    if (!isOnline || !user?.id) return;
+
+    const interval = setInterval(() => {
+      syncEngine.fullSync().catch(console.warn);
+    }, 60000);
+
+    return () => clearInterval(interval);
   }, [isOnline, user?.id]);
 
   // Sync when app comes to foreground
@@ -85,7 +96,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         user?.id
       ) {
         console.log('[SyncContext] App foregrounded, triggering sync');
-        syncEngine.triggerSync();
+        syncEngine.fullSync().catch(console.warn);
         audioUploader.processQueue().catch(console.warn);
       }
       appStateRef.current = nextAppState;

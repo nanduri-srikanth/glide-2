@@ -5,6 +5,7 @@ import { NotesColors } from '@/constants/theme';
 import { Note } from '@/data/types';
 import { formatRelativeTime, formatDuration } from '@/data/mockNotes';
 import { ActionBadge } from './ActionBadge';
+import { useNetwork } from '@/context/NetworkContext';
 
 interface NoteCardProps {
   note: Note;
@@ -12,6 +13,7 @@ interface NoteCardProps {
 }
 
 export function NoteCard({ note, onPress }: NoteCardProps) {
+  const { isOnline } = useNetwork();
   const hasCalendarActions = note.actions.calendar.length > 0;
   const hasEmailActions = note.actions.email.length > 0;
   const hasReminderActions = note.actions.reminders.length > 0;
@@ -36,6 +38,13 @@ export function NoteCard({ note, onPress }: NoteCardProps) {
       <Text style={styles.preview} numberOfLines={2}>
         {previewText}...
       </Text>
+
+      {!isOnline && note.sync_status === 'pending' && (
+        <View style={styles.syncRow}>
+          <Ionicons name="cloud-offline-outline" size={12} color={NotesColors.textSecondary} />
+          <Text style={styles.syncText}>Waiting to sync</Text>
+        </View>
+      )}
 
       <View style={styles.footer}>
         <View style={styles.badges}>
@@ -92,6 +101,16 @@ const styles = StyleSheet.create({
     color: NotesColors.textSecondary,
     lineHeight: 20,
     marginBottom: 12,
+  },
+  syncRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 10,
+  },
+  syncText: {
+    fontSize: 12,
+    color: NotesColors.textSecondary,
   },
   footer: {
     flexDirection: 'row',

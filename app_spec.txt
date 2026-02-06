@@ -1,0 +1,137 @@
+<project_specification>
+  <project_name>Glide - All Notes Endpoint</project_name>
+
+  <overview>
+    Glide is an existing mobile app that converts voice memos into actionable tasks using AI.
+    This specification covers a targeted set of changes to add a dedicated "All Notes" API endpoint
+    and update the frontend to use it, making the "all notes" intent explicit rather than implicit.
+  </overview>
+
+  <existing_codebase>
+    This is NOT a greenfield project. The codebase already exists with:
+    - React Native/Expo frontend (root directory)
+    - FastAPI Python backend (backend/ directory)
+    - PostgreSQL database via Supabase
+    - Full CRUD for notes, folders, actions
+    - Offline-first architecture with SQLite + sync engine
+    - JWT authentication
+
+    IMPORTANT: Do NOT create new project structure, init.sh, or modify unrelated code.
+    Only make the specific changes described in the features below.
+  </existing_codebase>
+
+  <technology_stack>
+    <frontend>
+      <framework>React Native 0.81 + Expo 54</framework>
+      <navigation>Expo Router (file-based)</navigation>
+      <local_database>expo-sqlite + Drizzle ORM</local_database>
+      <state>TanStack React Query + React Context</state>
+    </frontend>
+    <backend>
+      <framework>FastAPI (async)</framework>
+      <database>PostgreSQL (SQLAlchemy + Alembic)</database>
+      <ai>Claude API (action extraction), Groq Whisper (transcription)</ai>
+    </backend>
+  </technology_stack>
+
+  <feature_count>4</feature_count>
+
+  <core_changes>
+    <change_1>
+      <title>Backend: Add GET /api/v1/notes/all endpoint + extract build_note_list_item helper</title>
+      <file>backend/app/routers/notes.py</file>
+      <description>
+        1. Extract the repeated NoteListItem construction logic (lines 98-117 and 169-185) into a
+           helper function called build_note_list_item(note) that takes a Note with eagerly-loaded
+           actions and returns a NoteListItem. This avoids duplicating the action-counting logic.
+
+        2. Add a new GET /all endpoint BEFORE the /{note_id} route (after /search/all, around line 281).
+           This endpoint:
+           - Returns all non-deleted, non-archived notes for the current user
+           - Supports pagination (page, per_page query params)
+           - Eagerly loads actions via selectinload(Note.actions)
+           - Orders by is_pinned desc, created_at desc
+           - Uses the new build_note_list_item helper
+           - Returns NoteListResponse
+
+        3. Update list_notes, search_notes, and unified_search to use build_note_list_item helper
+           instead of inline NoteListItem construction.
+      </description>
+    </change_1>
+
+    <change_2>
+      <title>Frontend: Add listAllNotes method to NotesService</title>
+      <file>services/notes.ts</file>
+      <description>
+        Add a new method to the NotesService class (after listNotes, around line 138):
+
+        async listAllNotes(page: number = 1, perPage: number = 50): Promise&lt;{ data?: NoteListResponse; error?: string }&gt; {
+            const params = new URLSearchParams();
+            params.append('page', String(page));
+            params.append('per_page', String(perPage));
+            const response = await api.get&lt;NoteListResponse&gt;(`/notes/all?${params.toString()}`);
+            if (response.error) return { error: response.error.message };
+            return { data: response.data };
+        }
+      </description>
+    </change_2>
+
+    <change_3>
+      <title>Frontend: Update SyncEngine to use listAllNotes</title>
+      <file>lib/sync/SyncEngine.ts</file>
+      <description>
+        In the syncNotes() method (line 261-294), when no folder_id filter is present,
+        call notesService.listAllNotes() instead of notesService.listNotes({}):
+
+        Change line 268 from:
+          const { data, error } = await notesService.listNotes({ ...filters, per_page: 100 });
+
+        To:
+          const { data, error } = filters.folder_id
+              ? await notesService.listNotes({ ...filters, per_page: 100 })
+              : await notesService.listAllNotes(1, 100);
+      </description>
+    </change_3>
+
+    <change_4>
+      <title>Frontend: Update useNotesListQuery API fallback to use listAllNotes</title>
+      <file>hooks/queries/useNotesQuery.ts</file>
+      <description>
+        In useNotesListQuery (lines 36-41), when the database isn't initialized and we
+        fall back to the API, use the dedicated endpoint for "all notes":
+
+        Change lines 37-40 from:
+          if (!isDatabaseInitialized() || !user?.id) {
+              const { data, error } = await notesService.listNotes(filters);
+              if (error) throw new Error(error);
+              return data!;
+          }
+
+        To:
+          if (!isDatabaseInitialized() || !user?.id) {
+              const result = filters.folder_id
+                  ? await notesService.listNotes(filters)
+                  : await notesService.listAllNotes(filters.page, filters.per_page);
+              const { data, error } = result;
+              if (error) throw new Error(error);
+              return data!;
+          }
+      </description>
+    </change_4>
+  </core_changes>
+
+  <what_stays_the_same>
+    - SQLite local queries in NotesRepository.list() - already work correctly
+    - NotesContext.tsx - no changes needed
+    - [folderId].tsx - no changes needed
+    - The existing GET /api/v1/notes endpoint - still works for folder-filtered queries
+  </what_stays_the_same>
+
+  <verification>
+    1. Backend: Start with cd backend and uvicorn app.main:app --reload --port 8000
+    2. Test GET /api/v1/notes/all returns all non-deleted non-archived notes with pagination
+    3. Test that existing GET /api/v1/notes?folder_id=X still works
+    4. Run backend tests: cd backend and pytest
+    5. Verify TypeScript compiles: npx tsc --noEmit
+  </verification>
+</project_specification>

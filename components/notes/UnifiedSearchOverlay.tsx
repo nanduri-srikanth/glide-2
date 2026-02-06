@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { NotesColors } from '@/constants/theme';
+import { useNetwork } from '@/context/NetworkContext';
 import { notesService, FolderResponse, NoteListItem } from '@/services/notes';
 
 interface UnifiedSearchOverlayProps {
@@ -37,6 +38,7 @@ export function UnifiedSearchOverlay({
   const [isLoading, setIsLoading] = useState(false);
   const [folders, setFolders] = useState<FolderResponse[]>([]);
   const [notes, setNotes] = useState<NoteListItem[]>([]);
+  const { isOnline } = useNetwork();
   const inputRef = useRef<TextInput>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -174,6 +176,12 @@ export function UnifiedSearchOverlay({
             <Text style={styles.resultSubtitle} numberOfLines={1}>
               {item.data.preview}
             </Text>
+            {!isOnline && item.data.sync_status === 'pending' && (
+              <View style={styles.pendingRow}>
+                <Ionicons name="cloud-offline-outline" size={12} color={NotesColors.textSecondary} />
+                <Text style={styles.pendingText}>Waiting to sync</Text>
+              </View>
+            )}
           </View>
           <Ionicons name="chevron-forward" size={20} color={NotesColors.textSecondary} />
         </TouchableOpacity>
@@ -344,6 +352,16 @@ const styles = StyleSheet.create({
   },
   resultSubtitle: {
     fontSize: 14,
+    color: NotesColors.textSecondary,
+  },
+  pendingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
+  },
+  pendingText: {
+    fontSize: 12,
     color: NotesColors.textSecondary,
   },
   emptyContainer: {

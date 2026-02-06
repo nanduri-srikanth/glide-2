@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { NotesColors } from '@/constants/theme';
 import { useNotes } from '@/context/NotesContext';
 import { useAuth } from '@/context/AuthContext';
+import { useNetwork } from '@/context/NetworkContext';
 import { notesService, NoteListItem } from '@/services/notes';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -35,6 +36,7 @@ export function NoteSelectionSheet({
 }: NoteSelectionSheetProps) {
   const { folders } = useNotes();
   const { isAuthenticated } = useAuth();
+  const { isOnline } = useNetwork();
   const [notes, setNotes] = useState<NoteListItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -159,6 +161,12 @@ export function NoteSelectionSheet({
               <View style={styles.folderBadge}>
                 <Ionicons name="folder" size={10} color={NotesColors.primary} />
                 <Text style={styles.folderName}>{folderName}</Text>
+              </View>
+            )}
+            {!isOnline && item.sync_status === 'pending' && (
+              <View style={styles.pendingBadge}>
+                <Ionicons name="cloud-offline-outline" size={10} color={NotesColors.textSecondary} />
+                <Text style={styles.pendingText}>Waiting to sync</Text>
               </View>
             )}
             <Text style={styles.noteDate}>{formatRelativeTime(item.updated_at || item.created_at)}</Text>
@@ -347,6 +355,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  pendingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  pendingText: {
+    fontSize: 11,
+    color: NotesColors.textSecondary,
   },
   folderBadge: {
     flexDirection: 'row',

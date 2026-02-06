@@ -1,0 +1,21 @@
+# Sample Maestro flow - customize for your app
+# Run with: maestro test .maestro/sample-flow.yaml
+# Docs: https://maestro.mobile.dev/
+
+appId: com.yourapp.bundleid  # Replace with your app's bundle ID
+---
+- launchApp
+
+# Example: tap on a button
+# - tapOn: "Get Started"
+
+# Example: enter text
+# - tapOn:
+#     id: "email-input"
+# - inputText: "test@example.com"
+
+# Example: assert something is visible
+# - assertVisible: "Welcome"
+
+# Example: take screenshot
+# - takeScreenshot: "home-screen"

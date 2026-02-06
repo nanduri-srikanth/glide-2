@@ -12,7 +12,7 @@ import { getQueryClient } from '@/lib/queryClient';
 import { asyncStoragePersister } from '@/lib/persister';
 
 // Database and sync
-import { initializeDatabase, hydrateFromServer, isDatabaseInitialized, resetDatabase } from '@/lib/database';
+import { initializeDatabase, hydrateFromServer, isDatabaseInitialized, resetDatabase, isHydrated } from '@/lib/database';
 import { syncEngine } from '@/lib/sync';
 
 import { NotesColors } from '@/constants/theme';
@@ -68,7 +68,7 @@ const PurpleLightTheme = {
 function DatabaseInitializer({ children }: { children: React.ReactNode }) {
   const { user, isLoading: isAuthLoading } = useAuth();
   const { isOnline } = useNetwork();
-  const [dbState, setDbState] = useState<'initializing' | 'hydrating' | 'ready' | 'error'>('initializing');
+  const [dbState, setDbState] = useState<'initializing' | 'hydrating' | 'offline_waiting' | 'ready' | 'error'>('initializing');
   const [error, setError] = useState<string | null>(null);
   const initStarted = useRef(false);
   const retryCount = useRef(0);
@@ -88,19 +88,28 @@ function DatabaseInitializer({ children }: { children: React.ReactNode }) {
         await initializeDatabase();
         console.log('[DatabaseInitializer] Database initialized');
 
-        // 2. If user is logged in and online, hydrate from server (non-blocking)
-        if (user?.id && isOnline) {
-          setDbState('hydrating');
-          console.log('[DatabaseInitializer] Hydrating from server...');
-          const hydrated = await hydrateFromServer(user.id);
-          if (hydrated) {
-            console.log('[DatabaseInitializer] Hydration complete');
-          } else {
-            console.log('[DatabaseInitializer] Hydration incomplete, will use API fallback');
-          }
+        // 2. If user is logged in, hydrate from server when online
+        if (user?.id) {
+          if (isOnline) {
+            setDbState('hydrating');
+            console.log('[DatabaseInitializer] Hydrating from server...');
+            const hydrated = await hydrateFromServer(user.id);
+            if (hydrated) {
+              console.log('[DatabaseInitializer] Hydration complete');
+            } else {
+              console.log('[DatabaseInitializer] Hydration incomplete, will retry');
+            }
 
-          // 3. Initialize sync engine regardless of hydration status
-          await syncEngine.initialize(user.id);
+            // Initialize sync engine regardless of hydration status
+            await syncEngine.initialize(user.id);
+          } else {
+            const hydrated = await isHydrated(user.id);
+            if (!hydrated) {
+              console.log('[DatabaseInitializer] Offline and not hydrated yet');
+              setDbState('offline_waiting');
+              return;
+            }
+          }
         }
 
         setDbState('ready');
@@ -134,6 +143,30 @@ function DatabaseInitializer({ children }: { children: React.ReactNode }) {
     init();
   }, [isAuthLoading, user?.id, isOnline]);
 
+  // Retry hydration when coming online after an offline wait
+  useEffect(() => {
+    if (dbState !== 'offline_waiting') return;
+    if (!isOnline || !user?.id) return;
+
+    const retryHydration = async () => {
+      try {
+        setDbState('hydrating');
+        const hydrated = await hydrateFromServer(user.id);
+        if (hydrated) {
+          await syncEngine.initialize(user.id);
+          setDbState('ready');
+        } else {
+          setDbState('offline_waiting');
+        }
+      } catch (err) {
+        console.error('[DatabaseInitializer] Retry hydration failed:', err);
+        setDbState('offline_waiting');
+      }
+    };
+
+    retryHydration();
+  }, [dbState, isOnline, user?.id]);
+
   // Re-initialize sync engine when user logs in
   useEffect(() => {
     if (dbState === 'ready' && user?.id && isDatabaseInitialized()) {
@@ -147,12 +180,16 @@ function DatabaseInitializer({ children }: { children: React.ReactNode }) {
   }, [user?.id, dbState, isOnline]);
 
   // Show loading while initializing
-  if (dbState === 'initializing' || dbState === 'hydrating') {
+  if (dbState === 'initializing' || dbState === 'hydrating' || dbState === 'offline_waiting') {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={NotesColors.primary} />
         <Text style={styles.loadingText}>
-          {dbState === 'hydrating' ? 'Syncing data...' : 'Loading...'}
+          {dbState === 'hydrating'
+            ? 'Syncing data...'
+            : dbState === 'offline_waiting'
+              ? 'Waiting for connection to sync...'
+              : 'Loading...'}
         </Text>
       </View>
     );
@@ -267,8 +304,8 @@ function RootLayoutNav() {
   return (
     <ThemeProvider value={PurpleLightTheme}>
       <DatabaseInitializer>
-        <NotesProvider>
-          <SyncProvider>
+        <SyncProvider>
+          <NotesProvider>
             <AuthGuard>
               <Stack
                 screenOptions={{
@@ -284,8 +321,8 @@ function RootLayoutNav() {
                 <Stack.Screen name="auth" options={{ headerShown: false }} />
               </Stack>
             </AuthGuard>
-          </SyncProvider>
-        </NotesProvider>
+          </NotesProvider>
+        </SyncProvider>
       </DatabaseInitializer>
       <StatusBar style="dark" />
     </ThemeProvider>

@@ -21,6 +21,7 @@ import {
 } from '@/hooks/queries';
 import { NoteListItem, FolderResponse, NoteDetailResponse, FolderReorderItem } from '@/services/notes';
 import { Folder } from '@/data/types';
+import { useSync } from '@/context/SyncContext';
 
 interface NotesContextType {
   // Data
@@ -59,6 +60,7 @@ const NotesContext = createContext<NotesContextType | undefined>(undefined);
 
 export function NotesProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
+  const { syncNow } = useSync();
 
   // Local UI state
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
@@ -106,9 +108,9 @@ export function NotesProvider({ children }: { children: ReactNode }) {
 
   // Actions - these now just trigger refetches or update local state
   const fetchNotes = useCallback(async (folderId?: string) => {
-    if (folderId !== undefined) {
-      setSelectedFolderId(folderId || null);
-    }
+    // Explicitly set null when fetching "All Notes"
+    // (undefined should not leave previous folder selection in place)
+    setSelectedFolderId(folderId ?? null);
     // TanStack Query will automatically refetch when selectedFolderId changes
     // For manual refresh:
     await queryClient.invalidateQueries({ queryKey: queryKeys.notes.lists() });
@@ -119,11 +121,12 @@ export function NotesProvider({ children }: { children: ReactNode }) {
   }, [queryClient]);
 
   const refreshAll = useCallback(async () => {
+    await syncNow();
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: queryKeys.notes.lists() }),
       queryClient.invalidateQueries({ queryKey: queryKeys.folders.all }),
     ]);
-  }, [queryClient]);
+  }, [queryClient, syncNow]);
 
   const selectFolder = useCallback((folderId: string | null) => {
     setSelectedFolderId(folderId);

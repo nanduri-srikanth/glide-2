@@ -18,39 +18,51 @@ import { notesRepository, type LocalNoteListItem } from '@/lib/repositories';
 import { syncEngine, syncQueueService } from '@/lib/sync';
 import { useNetwork } from '@/context/NetworkContext';
 import { useAuth } from '@/context/AuthContext';
-import { isDatabaseInitialized } from '@/lib/database';
+import { isDatabaseInitialized, getStoredUserId } from '@/lib/database';
 
 // ============ QUERIES ============
 
 /**
  * Fetch list of notes with optional filters
- * Reads from SQLite first, triggers background sync if online
+ * Reads from SQLite first; background refresh handled by SyncContext
  */
 export function useNotesListQuery(filters: NoteFilters = {}) {
-  const { isOnline } = useNetwork();
   const { user } = useAuth();
 
   return useQuery({
     queryKey: queryKeys.notes.list(filters),
     queryFn: async () => {
-      // If database not initialized, fall back to API
-      if (!isDatabaseInitialized() || !user?.id) {
-        const result = filters.folder_id
-            ? await notesService.listNotes(filters)
-            : await notesService.listAllNotes(filters.page, filters.per_page);
-        const { data, error } = result;
-        if (error) throw new Error(error);
-        return data!;
+      if (!isDatabaseInitialized()) {
+        if (user?.id) {
+          const result = filters.folder_id
+              ? await notesService.listNotes(filters)
+              : await notesService.listAllNotes(filters.page, filters.per_page);
+          const { data, error } = result;
+          if (error) throw new Error(error);
+          return data!;
+        }
+        return {
+          items: [],
+          total: 0,
+          page: filters.page || 1,
+          per_page: filters.per_page || 20,
+          pages: 0,
+        } as NoteListResponse;
+      }
+
+      const localUserId = user?.id ?? await getStoredUserId();
+      if (!localUserId) {
+        return {
+          items: [],
+          total: 0,
+          page: filters.page || 1,
+          per_page: filters.per_page || 20,
+          pages: 0,
+        } as NoteListResponse;
       }
 
       // PRIMARY: Read from SQLite
-      const localNotes = await notesRepository.list(filters, user.id);
-
-      // SECONDARY: Background sync if online (don't await, but invalidate cache after)
-      // Use onlineManager.isOnline() for a live check, avoiding stale closure over isOnline
-      if (onlineManager.isOnline()) {
-        syncEngine.syncNotes(filters, true).catch(console.warn);
-      }
+      const localNotes = await notesRepository.list(filters, localUserId);
 
       // Transform to match API response format
       return {
@@ -73,7 +85,6 @@ export function useNotesListQuery(filters: NoteFilters = {}) {
  * Reads from SQLite first, falls back to API if not found
  */
 export function useNoteDetailQuery(noteId: string | undefined) {
-  const { isOnline } = useNetwork();
   const { user } = useAuth();
 
   return useQuery({
@@ -86,7 +97,7 @@ export function useNoteDetailQuery(noteId: string | undefined) {
         const localNote = await notesRepository.getDetail(noteId);
         if (localNote) {
           // Trigger background sync for this note if online
-          if (onlineManager.isOnline()) {
+          if (onlineManager.isOnline() && user?.id) {
             notesService.getNote(noteId).then(({ data }) => {
               if (data && user?.id) {
                 notesRepository.upsertFromServer(data, user.id).then(() => {
@@ -100,16 +111,20 @@ export function useNoteDetailQuery(noteId: string | undefined) {
         }
       }
 
-      // Fall back to API
-      const { data, error } = await notesService.getNote(noteId);
-      if (error) throw new Error(error);
+      if (user?.id) {
+        // Fall back to API
+        const { data, error } = await notesService.getNote(noteId);
+        if (error) throw new Error(error);
 
-      // Store in SQLite for future offline access
-      if (data && isDatabaseInitialized() && user?.id) {
-        await notesRepository.upsertFromServer(data, user.id).catch(console.warn);
+        // Store in SQLite for future offline access
+        if (data && isDatabaseInitialized() && user?.id) {
+          await notesRepository.upsertFromServer(data, user.id).catch(console.warn);
+        }
+
+        return data!;
       }
 
-      return data!;
+      throw new Error('Note not available offline');
     },
     enabled: !!noteId,
   });
@@ -120,35 +135,37 @@ export function useNoteDetailQuery(noteId: string | undefined) {
  * Searches local SQLite first, syncs from API if online
  */
 export function useNotesSearchQuery(query: string, enabled: boolean = true) {
-  const { isOnline } = useNetwork();
   const { user } = useAuth();
 
   return useQuery({
     queryKey: queryKeys.notes.search(query),
     queryFn: async () => {
       // If database initialized, search locally first
-      if (isDatabaseInitialized() && user?.id) {
-        const localResults = await notesRepository.search(query, user.id);
+      if (isDatabaseInitialized()) {
+        const localUserId = user?.id ?? await getStoredUserId();
+        if (localUserId) {
+          const localResults = await notesRepository.search(query, localUserId);
 
-        // Also fetch from API if online and store results locally
-        if (onlineManager.isOnline()) {
-          notesService.searchNotes(query).then(({ data: apiData }) => {
-            if (apiData?.items && user?.id) {
-              // Store API results in SQLite for future offline access
-              for (const item of apiData.items) {
-                notesRepository.bulkUpsert([item], user.id).catch(console.warn);
+          // Also fetch from API if online and store results locally
+          if (onlineManager.isOnline() && user?.id) {
+            notesService.searchNotes(query).then(({ data: apiData }) => {
+              if (apiData?.items && user?.id) {
+                // Store API results in SQLite for future offline access
+                for (const item of apiData.items) {
+                  notesRepository.bulkUpsert([item], user.id).catch(console.warn);
+                }
               }
-            }
-          }).catch(console.warn);
-        }
+            }).catch(console.warn);
+          }
 
-        return {
-          items: localResults,
-          total: localResults.length,
-          page: 1,
-          per_page: 20,
-          pages: 1,
-        } as NoteListResponse;
+          return {
+            items: localResults,
+            total: localResults.length,
+            page: 1,
+            per_page: 20,
+            pages: 1,
+          } as NoteListResponse;
+        }
       }
 
       // Fall back to API
@@ -165,7 +182,6 @@ export function useNotesSearchQuery(query: string, enabled: boolean = true) {
  * Unified search (notes + folders)
  */
 export function useUnifiedSearchQuery(query: string, enabled: boolean = true) {
-  const { isOnline } = useNetwork();
   const { user } = useAuth();
 
   return useQuery({
@@ -174,20 +190,23 @@ export function useUnifiedSearchQuery(query: string, enabled: boolean = true) {
       // For unified search, still use API as it combines notes and folders
       if (!onlineManager.isOnline()) {
         // If offline, search locally
-        if (isDatabaseInitialized() && user?.id) {
-          const localNotes = await notesRepository.search(query, user.id);
-          const { foldersRepository } = await import('@/lib/repositories');
-          const allFolders = await foldersRepository.list(user.id);
+        if (isDatabaseInitialized()) {
+          const localUserId = user?.id ?? await getStoredUserId();
+          if (localUserId) {
+            const localNotes = await notesRepository.search(query, localUserId);
+            const { foldersRepository } = await import('@/lib/repositories');
+            const allFolders = await foldersRepository.list(localUserId);
 
-          // Simple filter on folders by name
-          const matchedFolders = allFolders.filter(f =>
-            f.name.toLowerCase().includes(query.toLowerCase())
-          );
+            // Simple filter on folders by name
+            const matchedFolders = allFolders.filter(f =>
+              f.name.toLowerCase().includes(query.toLowerCase())
+            );
 
-          return {
-            folders: matchedFolders,
-            notes: localNotes,
-          } as UnifiedSearchResponse;
+            return {
+              folders: matchedFolders,
+              notes: localNotes,
+            } as UnifiedSearchResponse;
+          }
         }
       }
 

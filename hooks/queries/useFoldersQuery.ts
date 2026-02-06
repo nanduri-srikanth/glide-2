@@ -10,9 +10,9 @@ import { queryKeys } from '@/lib/queryClient';
 import { notesService, FolderResponse, FolderReorderItem } from '@/services/notes';
 import { foldersRepository } from '@/lib/repositories';
 import { syncEngine, syncQueueService } from '@/lib/sync';
-import { useNetwork } from '@/context/NetworkContext';
 import { useAuth } from '@/context/AuthContext';
-import { isDatabaseInitialized } from '@/lib/database';
+import { useNetwork } from '@/context/NetworkContext';
+import { isDatabaseInitialized, getStoredUserId } from '@/lib/database';
 
 /**
  * Generate a UUID for new entities
@@ -29,29 +29,29 @@ function generateId(): string {
 
 /**
  * Fetch list of folders
- * Reads from SQLite first, triggers background sync if online
+ * Reads from SQLite first; background refresh handled by SyncContext
  */
 export function useFoldersQuery() {
-  const { isOnline } = useNetwork();
   const { user } = useAuth();
 
   return useQuery({
     queryKey: queryKeys.folders.list(),
     queryFn: async () => {
-      // If database not initialized, fall back to API
-      if (!isDatabaseInitialized() || !user?.id) {
-        const { data, error } = await notesService.listFolders();
-        if (error) throw new Error(error);
-        return data!;
+      // If database not initialized, fall back to API only when authenticated
+      if (!isDatabaseInitialized()) {
+        if (user?.id) {
+          const { data, error } = await notesService.listFolders();
+          if (error) throw new Error(error);
+          return data!;
+        }
+        return [] as FolderResponse[];
       }
+
+      const localUserId = user?.id ?? await getStoredUserId();
+      if (!localUserId) return [] as FolderResponse[];
 
       // PRIMARY: Read from SQLite
-      const localFolders = await foldersRepository.list(user.id);
-
-      // SECONDARY: Background sync if online (don't await)
-      if (isOnline) {
-        syncEngine.syncFolders().catch(console.warn);
-      }
+      const localFolders = await foldersRepository.list(localUserId);
 
       return localFolders as FolderResponse[];
     },

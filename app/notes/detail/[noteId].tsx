@@ -35,6 +35,7 @@ import { useNoteDetail } from '@/hooks/useNoteDetail';
 import { useRecording } from '@/hooks/useRecording';
 import { useActionDrafts } from '@/hooks/useActionDrafts';
 import { useAuth } from '@/context/AuthContext';
+import { useNetwork } from '@/context/NetworkContext';
 import { Note } from '@/data/types';
 import { useNavigation, usePreventRemove } from '@react-navigation/native';
 import { generateTitleFromContent, isUserSetTitle } from '@/utils/textUtils';
@@ -135,6 +136,7 @@ export default function NoteDetailScreen() {
     appendProgress,
     appendStatus,
   } = useNoteDetail(noteId);
+  const { isOnline } = useNetwork();
 
   const navigation = useNavigation();
 
@@ -749,6 +751,14 @@ export default function NoteDetailScreen() {
         </View>
       )}
 
+      {/* Offline Sync Indicator */}
+      {!isOnline && rawNote?.sync_status === 'pending' && !rawNote?.ai_processed && (
+        <View style={styles.offlineSyncIndicator}>
+          <Ionicons name="cloud-offline-outline" size={14} color={NotesColors.textSecondary} />
+          <Text style={styles.offlineSyncText}>Waiting for connection to sync</Text>
+        </View>
+      )}
+
       <Animated.ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
@@ -1143,6 +1153,18 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(98, 69, 135, 0.08)',
   },
   unsavedText: {
+    fontSize: 12,
+    color: NotesColors.textSecondary,
+  },
+  offlineSyncIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(0, 0, 0, 0.04)',
+  },
+  offlineSyncText: {
     fontSize: 12,
     color: NotesColors.textSecondary,
   },

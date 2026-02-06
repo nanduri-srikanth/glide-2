@@ -5,6 +5,13 @@ const MIGRATION_KEY = 'hydration_complete';
 const USER_ID_KEY = 'current_user_id';
 
 /**
+ * Get the stored user ID for local data access (even when logged out)
+ */
+export async function getStoredUserId(): Promise<string | null> {
+  return metadataRepository.get(USER_ID_KEY);
+}
+
+/**
  * Check if initial hydration has been completed for the current user
  */
 export async function isHydrated(userId: string): Promise<boolean> {

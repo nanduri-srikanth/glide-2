@@ -154,8 +154,26 @@ async def create_folder(
                     code=ErrorCode.CONFLICT_RESOURCE_EXISTS,
                     param="client_id",
                 )
-            response = FolderResponse.model_validate(existing_folder)
-            return response
+            # Avoid lazy-loading relationships in response
+            count_result = await db.execute(
+                select(func.count(Note.id))
+                .where(Note.folder_id == existing_folder.id)
+                .where(Note.is_deleted == False)
+            )
+            note_count = count_result.scalar() or 0
+            return FolderResponse(
+                id=existing_folder.id,
+                name=existing_folder.name,
+                icon=existing_folder.icon,
+                color=existing_folder.color,
+                is_system=existing_folder.is_system,
+                note_count=note_count,
+                sort_order=existing_folder.sort_order,
+                parent_id=existing_folder.parent_id,
+                depth=existing_folder.depth,
+                children=[],
+                created_at=existing_folder.created_at,
+            )
 
     # Check for duplicate name
     result = await db.execute(

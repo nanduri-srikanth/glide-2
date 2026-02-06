@@ -19,6 +19,7 @@ export interface NoteListItem {
   reminder_count: number;
   created_at: string;
   updated_at?: string;
+  sync_status?: 'synced' | 'pending' | 'conflict' | 'error';
 }
 
 export interface NoteListResponse {
@@ -36,12 +37,14 @@ export interface NoteDetailResponse {
   summary: string | null;
   duration: number | null;
   audio_url: string | null;
+  local_audio_path?: string | null;
   folder_id: string | null;
   folder_name: string | null;
   tags: string[];
   is_pinned: boolean;
   is_archived: boolean;
   ai_processed: boolean;
+  sync_status?: 'synced' | 'pending' | 'conflict' | 'error';
   ai_metadata?: {
     input_history?: Array<{
       type: 'text' | 'audio';
@@ -231,6 +234,7 @@ class NotesService {
       folderId: apiNote.folder_id || 'all-icloud',
       tags: apiNote.tags,
       actions: this.convertActions(apiNote.actions),
+      sync_status: apiNote.sync_status,
     };
   }
 

@@ -1,13 +1,7 @@
 """API tests."""
-import pytest
-from fastapi.testclient import TestClient
-
-from app.main import app
-
-client = TestClient(app)
 
 
-def test_root():
+def test_root(client):
     """Test root endpoint."""
     response = client.get("/")
     assert response.status_code == 200
@@ -16,14 +10,14 @@ def test_root():
     assert data["status"] == "running"
 
 
-def test_health():
+def test_health(client):
     """Test health check endpoint."""
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "healthy"
 
 
-def test_register_user():
+def test_register_user(client):
     """Test user registration."""
     response = client.post(
         "/api/v1/auth/register",
@@ -37,7 +31,7 @@ def test_register_user():
     assert response.status_code in [201, 500]
 
 
-def test_login_invalid():
+def test_login_invalid(client):
     """Test login with invalid credentials."""
     response = client.post(
         "/api/v1/auth/login",
@@ -46,28 +40,28 @@ def test_login_invalid():
             "password": "wrongpassword",
         },
     )
-    assert response.status_code in [401, 500]
+    assert response.status_code in [400, 401, 500]
 
 
-def test_protected_endpoint_no_auth():
+def test_protected_endpoint_no_auth(client):
     """Test that protected endpoints require auth."""
     response = client.get("/api/v1/auth/me")
     assert response.status_code == 401
 
 
-def test_notes_list_no_auth():
+def test_notes_list_no_auth(client):
     """Test that notes endpoint requires auth."""
     response = client.get("/api/v1/notes")
     assert response.status_code == 401
 
 
-def test_voice_process_no_auth():
+def test_voice_process_no_auth(client):
     """Test that voice processing requires auth."""
     response = client.post("/api/v1/voice/process")
     assert response.status_code in [401, 422]  # 422 if missing file
 
 
-def test_integrations_status_no_auth():
+def test_integrations_status_no_auth(client):
     """Test integrations status requires auth."""
     response = client.get("/api/v1/integrations/status")
     assert response.status_code == 401

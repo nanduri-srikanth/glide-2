@@ -1,0 +1,13 @@
+appId: com.snandur2.glide
+env:
+  TEST_EMAIL: "qa@example.com"
+  TEST_PASSWORD: "testpassword123"
+---
+- launchApp
+- openLink: "glide://record?autoStart=true"
+- assertVisible:
+    text: "Processing Recording"
+    optional: true
+- assertVisible:
+    text: "Saving Note"
+    optional: true

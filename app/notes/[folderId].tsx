@@ -89,6 +89,7 @@ export default function NoteListScreen() {
         folderId: n.folder_id || folderId || '',
         tags: n.tags || [],
         isPinned: n.is_pinned || false,
+        sync_status: n.sync_status,
       }));
     }
     // Only use mock data when not authenticated

@@ -15,4 +15,5 @@ export {
   forceRehydrate,
   clearHydrationState,
   getHydrationStatus,
+  getStoredUserId,
 } from './hydrate';

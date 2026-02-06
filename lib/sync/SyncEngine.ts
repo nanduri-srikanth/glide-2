@@ -1,4 +1,4 @@
-import { notesService, type NoteFilters } from '@/services/notes';
+import { notesService, type NoteFilters, type NoteListResponse } from '@/services/notes';
 import { notesRepository, foldersRepository } from '../repositories';
 import { syncQueueService, type QueueItem, type EntityType } from './SyncQueue';
 import { getQueryClient } from '../queryClient';
@@ -37,7 +37,7 @@ class SyncEngine {
   }
 
   /**
-   * Start periodic sync (every 30 seconds)
+   * Start periodic sync (every 60 seconds)
    */
   private startPeriodicSync(): void {
     if (this.syncInterval) return;
@@ -48,7 +48,7 @@ class SyncEngine {
       } catch (error) {
         console.warn('[SyncEngine] Periodic sync failed:', error);
       }
-    }, 30000);
+    }, 60000);
   }
 
   /**
@@ -268,9 +268,29 @@ class SyncEngine {
     }
 
     try {
-      const { data, error } = filters.folder_id
-          ? await notesService.listNotes({ ...filters, per_page: 100 })
-          : await notesService.listAllNotes(1, 100);
+      const fetchAllPages = async (fetchPage: (page: number) => Promise<{ data?: NoteListResponse; error?: string }>) => {
+        let page = 1;
+        let pages = 1;
+        const allItems: NoteListResponse['items'] = [];
+
+        while (page <= pages) {
+          const { data, error } = await fetchPage(page);
+          if (error) return { error };
+          if (data?.items) {
+            allItems.push(...data.items);
+            pages = data.pages || pages;
+          }
+          page += 1;
+        }
+
+        return { data: { items: allItems } as Pick<NoteListResponse, 'items'> };
+      };
+
+      const result = filters.folder_id
+          ? await fetchAllPages((page) => notesService.listNotes({ ...filters, page, per_page: 100 }))
+          : await fetchAllPages((page) => notesService.listAllNotes(page, 100));
+
+      const { data, error } = result as { data?: Pick<NoteListResponse, 'items'>; error?: string };
 
       if (error) {
         console.error('[SyncEngine] Failed to fetch notes:', error);

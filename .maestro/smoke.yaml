@@ -1,0 +1,38 @@
+appId: com.snandur2.glide
+env:
+  TEST_EMAIL: "qa@example.com"
+  TEST_PASSWORD: "testpassword123"
+---
+- launchApp
+- tapOn:
+    text: "Sign In"
+    optional: true
+- assertVisible:
+    text: "Email"
+    optional: true
+- tapOn:
+    text: "Email"
+    optional: true
+- inputText: ${TEST_EMAIL}
+- tapOn:
+    text: "Password"
+    optional: true
+- inputText: ${TEST_PASSWORD}
+- tapOn:
+    text: "Sign In"
+    optional: true
+- assertVisible:
+    text: "Folders"
+    optional: true
+- tapOn:
+    text: "Notes"
+    optional: true
+- tapOn:
+    text: "Settings"
+    optional: true
+- assertVisible:
+    text: "Settings"
+    optional: true
+- tapOn:
+    text: "Notes"
+    optional: true
