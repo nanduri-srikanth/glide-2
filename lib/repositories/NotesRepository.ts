@@ -304,8 +304,20 @@ class NotesRepository extends BaseRepository<NoteRow, NoteInsert, typeof notes> 
     if (existing) {
       // Check for conflict (local changes since last sync)
       if (existing.sync_status === 'pending') {
-        // Local changes exist - mark as conflict
-        await this.markConflict(serverNote.id);
+        // Local changes exist - use last-write-wins strategy based on timestamps.
+        // If server data is newer, accept it. Otherwise keep local changes
+        // so they can be pushed on the next sync cycle.
+        const localTime = existing.local_updated_at || existing.updated_at;
+        const serverTime = serverNote.updated_at;
+
+        if (serverTime && localTime && serverTime > localTime) {
+          // Server is newer - accept server data, discard local pending changes
+          await db
+            .update(notes)
+            .set(noteData)
+            .where(eq(notes.id, serverNote.id));
+        }
+        // Otherwise keep local version - it will be pushed on next sync
         return;
       }
 
@@ -358,7 +370,7 @@ class NotesRepository extends BaseRepository<NoteRow, NoteInsert, typeof notes> 
         user_id: userId,
         folder_id: note.folder_id,
         title: note.title,
-        transcript: note.preview, // List items only have preview
+        transcript: note.preview || '', // List items only have preview; full transcript fetched on detail view
         duration: note.duration,
         tags: note.tags,
         is_pinned: note.is_pinned,
