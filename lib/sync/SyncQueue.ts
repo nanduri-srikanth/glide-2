@@ -70,7 +70,7 @@ class SyncQueue {
         .update(syncQueue)
         .set({
           operation: newOperation,
-          payload: newPayload ? JSON.stringify(newPayload) : null,
+          payload: newPayload ?? null,
           created_at: now,
         })
         .where(eq(syncQueue.id, existingItem.id));
@@ -83,7 +83,7 @@ class SyncQueue {
       entity_type: input.entity_type,
       entity_id: input.entity_id,
       operation: input.operation,
-      payload: input.payload ? JSON.stringify(input.payload) : null,
+      payload: input.payload ?? null,
       created_at: now,
       retry_count: 0,
       status: 'pending',

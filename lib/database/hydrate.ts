@@ -51,15 +51,16 @@ export async function hydrateFromServer(userId: string): Promise<boolean> {
       notesService.listFolders(),
     ]);
 
-    // Handle partial failures gracefully
-    let hasData = false;
+    // Handle partial failures - only mark complete if BOTH succeed
+    let notesOk = false;
+    let foldersOk = false;
 
     if (foldersResponse.error) {
       console.warn('[Hydration] Failed to fetch folders:', foldersResponse.error);
     } else if (foldersResponse.data) {
       console.log('[Hydration] Inserting', foldersResponse.data.length, 'folders');
       await foldersRepository.bulkUpsert(foldersResponse.data, userId);
-      hasData = true;
+      foldersOk = true;
     }
 
     if (notesResponse.error) {
@@ -67,15 +68,19 @@ export async function hydrateFromServer(userId: string): Promise<boolean> {
     } else if (notesResponse.data?.items) {
       console.log('[Hydration] Inserting', notesResponse.data.items.length, 'notes');
       await notesRepository.bulkUpsert(notesResponse.data.items, userId);
-      hasData = true;
+      notesOk = true;
     }
 
-    // Mark hydration complete only if we got some data
-    if (hasData) {
+    // Only mark hydration complete if both notes and folders succeeded
+    // to avoid permanently skipping one type of data
+    if (notesOk && foldersOk) {
       await metadataRepository.set(MIGRATION_KEY, 'true');
       await metadataRepository.set('last_hydration', new Date().toISOString());
       console.log('[Hydration] Complete');
       return true;
+    } else if (notesOk || foldersOk) {
+      console.warn('[Hydration] Partial hydration - will retry on next launch');
+      return false;
     } else {
       console.warn('[Hydration] No data fetched, will retry later');
       return false;

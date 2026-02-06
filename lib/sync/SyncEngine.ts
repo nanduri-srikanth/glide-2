@@ -113,6 +113,7 @@ class SyncEngine {
 
       if (items.length === 0) {
         console.log('[SyncEngine] No items to sync');
+        this.lastSyncAt = new Date().toISOString();
         return;
       }
 
@@ -273,11 +274,19 @@ class SyncEngine {
       }
 
       if (data?.items) {
-        for (const note of data.items) {
-          // Fetch full note details for complete data
-          const detailResponse = await notesService.getNote(note.id);
-          if (detailResponse.data) {
-            await notesRepository.upsertFromServer(detailResponse.data, this.userId);
+        // Batch fetch full details for notes that need updating,
+        // using concurrent requests with a concurrency limit
+        const CONCURRENCY = 5;
+        const items = data.items;
+        for (let i = 0; i < items.length; i += CONCURRENCY) {
+          const batch = items.slice(i, i + CONCURRENCY);
+          const detailResults = await Promise.all(
+            batch.map(note => notesService.getNote(note.id))
+          );
+          for (const detailResponse of detailResults) {
+            if (detailResponse.data) {
+              await notesRepository.upsertFromServer(detailResponse.data, this.userId);
+            }
           }
         }
 
@@ -332,7 +341,15 @@ class SyncEngine {
   async fullSync(): Promise<void> {
     console.log('[SyncEngine] Starting full sync');
 
-    // First push local changes
+    // Wait for any in-progress sync to finish before processing queue
+    // This ensures user-triggered sync always pushes pending changes
+    const maxWait = 10000; // 10 seconds max wait
+    const start = Date.now();
+    while (this.isSyncing && Date.now() - start < maxWait) {
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+
+    // Push local changes
     await this.processQueue();
 
     // Then pull from server and invalidate cache (explicit user action)
