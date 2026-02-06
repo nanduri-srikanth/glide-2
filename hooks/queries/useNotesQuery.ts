@@ -35,7 +35,10 @@ export function useNotesListQuery(filters: NoteFilters = {}) {
     queryFn: async () => {
       // If database not initialized, fall back to API
       if (!isDatabaseInitialized() || !user?.id) {
-        const { data, error } = await notesService.listNotes(filters);
+        const result = filters.folder_id
+            ? await notesService.listNotes(filters)
+            : await notesService.listAllNotes(filters.page, filters.per_page);
+        const { data, error } = result;
         if (error) throw new Error(error);
         return data!;
       }
