@@ -265,7 +265,9 @@ class SyncEngine {
     }
 
     try {
-      const { data, error } = await notesService.listNotes({ ...filters, per_page: 100 });
+      const { data, error } = filters.folder_id
+          ? await notesService.listNotes({ ...filters, per_page: 100 })
+          : await notesService.listAllNotes(1, 100);
 
       if (error) {
         console.error('[SyncEngine] Failed to fetch notes:', error);
