@@ -267,23 +267,25 @@ function RootLayoutNav() {
   return (
     <ThemeProvider value={PurpleLightTheme}>
       <DatabaseInitializer>
-        <SyncProvider>
-          <AuthGuard>
-            <Stack
-              screenOptions={{
-                headerStyle: { backgroundColor: NotesColors.background },
-                headerTintColor: NotesColors.textPrimary,
-                headerTitleStyle: { fontWeight: '600' },
-                contentStyle: { backgroundColor: NotesColors.background },
-              }}
-            >
-              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-              <Stack.Screen name="notes" options={{ headerShown: false }} />
-              <Stack.Screen name="recording" options={{ presentation: 'modal', headerShown: false }} />
-              <Stack.Screen name="auth" options={{ headerShown: false }} />
-            </Stack>
-          </AuthGuard>
-        </SyncProvider>
+        <NotesProvider>
+          <SyncProvider>
+            <AuthGuard>
+              <Stack
+                screenOptions={{
+                  headerStyle: { backgroundColor: NotesColors.background },
+                  headerTintColor: NotesColors.textPrimary,
+                  headerTitleStyle: { fontWeight: '600' },
+                  contentStyle: { backgroundColor: NotesColors.background },
+                }}
+              >
+                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                <Stack.Screen name="notes" options={{ headerShown: false }} />
+                <Stack.Screen name="recording" options={{ presentation: 'modal', headerShown: false }} />
+                <Stack.Screen name="auth" options={{ headerShown: false }} />
+              </Stack>
+            </AuthGuard>
+          </SyncProvider>
+        </NotesProvider>
       </DatabaseInitializer>
       <StatusBar style="dark" />
     </ThemeProvider>
@@ -298,9 +300,7 @@ export default function RootLayout() {
     >
       <NetworkProvider>
         <AuthProvider>
-          <NotesProvider>
-            <RootLayoutNav />
-          </NotesProvider>
+          <RootLayoutNav />
         </AuthProvider>
       </NetworkProvider>
     </PersistQueryClientProvider>

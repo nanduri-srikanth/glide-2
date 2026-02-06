@@ -391,6 +391,10 @@ class DatabaseManager {
         `);
         break;
 
+      case 5:
+        // No schema changes — createTables() already has the correct schema
+        break;
+
       default:
         throw new Error(`Unknown migration version: ${version}`);
     }
