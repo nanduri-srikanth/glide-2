@@ -31,6 +31,41 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def build_note_list_item(note: Note) -> NoteListItem:
+    """
+    Build a NoteListItem from a Note object with eagerly-loaded actions.
+
+    Args:
+        note: A Note object with actions eagerly loaded via selectinload(Note.actions)
+
+    Returns:
+        A NoteListItem with action counts and preview text populated
+    """
+    # Count actions by type
+    calendar_count = sum(1 for a in note.actions if a.action_type == ActionType.CALENDAR)
+    email_count = sum(1 for a in note.actions if a.action_type == ActionType.EMAIL)
+    reminder_count = sum(1 for a in note.actions if a.action_type == ActionType.REMINDER)
+
+    # Handle preview: truncate transcript if needed, handle empty transcript
+    transcript = note.transcript or ""
+    preview = transcript[:100] + "..." if len(transcript) > 100 else transcript
+
+    return NoteListItem(
+        id=note.id,
+        title=note.title,
+        preview=preview,
+        duration=note.duration,
+        folder_id=note.folder_id,
+        tags=note.tags or [],
+        is_pinned=note.is_pinned,
+        action_count=len(note.actions),
+        calendar_count=calendar_count,
+        email_count=email_count,
+        reminder_count=reminder_count,
+        created_at=note.created_at,
+    )
+
+
 @router.get("", response_model=NoteListResponse)
 async def list_notes(
     current_user: Annotated[User, Depends(get_current_user)],
@@ -93,28 +128,8 @@ async def list_notes(
     result = await db.execute(query)
     notes = result.scalars().all()
 
-    # Transform to list items
-    items = []
-    for note in notes:
-        # Count actions by type
-        calendar_count = sum(1 for a in note.actions if a.action_type == ActionType.CALENDAR)
-        email_count = sum(1 for a in note.actions if a.action_type == ActionType.EMAIL)
-        reminder_count = sum(1 for a in note.actions if a.action_type == ActionType.REMINDER)
-
-        items.append(NoteListItem(
-            id=note.id,
-            title=note.title,
-            preview=note.transcript[:100] + "..." if len(note.transcript) > 100 else note.transcript,
-            duration=note.duration,
-            folder_id=note.folder_id,
-            tags=note.tags or [],
-            is_pinned=note.is_pinned,
-            action_count=len(note.actions),
-            calendar_count=calendar_count,
-            email_count=email_count,
-            reminder_count=reminder_count,
-            created_at=note.created_at,
-        ))
+    # Transform to list items using helper function
+    items = [build_note_list_item(note) for note in notes]
 
     return NoteListResponse(
         items=items,
@@ -166,23 +181,8 @@ async def search_notes(
     result = await db.execute(query)
     notes = result.scalars().all()
 
-    items = [
-        NoteListItem(
-            id=note.id,
-            title=note.title,
-            preview=note.transcript[:100] if note.transcript else "",
-            duration=note.duration,
-            folder_id=note.folder_id,
-            tags=note.tags or [],
-            is_pinned=note.is_pinned,
-            action_count=len(note.actions),
-            calendar_count=sum(1 for a in note.actions if a.action_type == ActionType.CALENDAR),
-            email_count=sum(1 for a in note.actions if a.action_type == ActionType.EMAIL),
-            reminder_count=sum(1 for a in note.actions if a.action_type == ActionType.REMINDER),
-            created_at=note.created_at,
-        )
-        for note in notes
-    ]
+    # Transform to list items using helper function
+    items = [build_note_list_item(note) for note in notes]
 
     return NoteListResponse(
         items=items,
@@ -256,27 +256,61 @@ async def unified_search(
     note_result = await db.execute(note_query)
     notes = note_result.scalars().all()
 
-    note_items = [
-        NoteListItem(
-            id=note.id,
-            title=note.title,
-            preview=note.transcript[:100] if note.transcript else "",
-            duration=note.duration,
-            folder_id=note.folder_id,
-            tags=note.tags or [],
-            is_pinned=note.is_pinned,
-            action_count=len(note.actions),
-            calendar_count=sum(1 for a in note.actions if a.action_type == ActionType.CALENDAR),
-            email_count=sum(1 for a in note.actions if a.action_type == ActionType.EMAIL),
-            reminder_count=sum(1 for a in note.actions if a.action_type == ActionType.REMINDER),
-            created_at=note.created_at,
-        )
-        for note in notes
-    ]
+    # Transform to list items using helper function
+    note_items = [build_note_list_item(note) for note in notes]
 
     return UnifiedSearchResponse(
         folders=folder_responses,
         notes=note_items,
+    )
+
+
+@router.get("/all", response_model=NoteListResponse)
+async def list_all_notes(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_db),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+):
+    """
+    Get all non-deleted, non-archived notes for the current user.
+
+    This is the dedicated endpoint for "all notes" queries, used when no folder filter is applied.
+    """
+    # Base query - all non-deleted, non-archived notes for this user
+    query = (
+        select(Note)
+        .where(Note.user_id == current_user.id)
+        .where(Note.is_deleted == False)
+        .where(Note.is_archived == False)
+    )
+
+    # Get total count
+    count_query = select(func.count()).select_from(query.subquery())
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    # Apply pagination and ordering
+    query = (
+        query
+        .options(selectinload(Note.actions))
+        .order_by(Note.is_pinned.desc(), Note.created_at.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+    )
+
+    result = await db.execute(query)
+    notes = result.scalars().all()
+
+    # Transform to list items using helper function
+    items = [build_note_list_item(note) for note in notes]
+
+    return NoteListResponse(
+        items=items,
+        total=total,
+        page=page,
+        per_page=per_page,
+        pages=(total + per_page - 1) // per_page,
     )
 
 
