@@ -87,6 +87,7 @@ class ActionsRepository extends BaseRepository<ActionRow, ActionInsert, typeof a
       description: input.description || null,
       scheduled_date: input.scheduled_date || null,
       created_at: now,
+      updated_at: now,
       sync_status: 'pending',
     });
 
@@ -136,6 +137,7 @@ class ActionsRepository extends BaseRepository<ActionRow, ActionInsert, typeof a
       description: serverAction.description,
       scheduled_date: serverAction.scheduled_date,
       created_at: serverAction.created_at,
+      updated_at: serverAction.created_at,
       sync_status: 'synced',
     };
 

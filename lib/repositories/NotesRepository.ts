@@ -330,8 +330,10 @@ class NotesRepository extends BaseRepository<NoteRow, NoteInsert, typeof notes> 
       await db.insert(notes).values(noteData);
     }
 
-    // Update actions
-    await this.upsertActionsFromServer(serverNote.id, serverNote.actions);
+    // Update actions (guard against null/undefined from API)
+    if (Array.isArray(serverNote.actions) && serverNote.actions.length > 0) {
+      await this.upsertActionsFromServer(serverNote.id, serverNote.actions);
+    }
   }
 
   /**
@@ -342,18 +344,19 @@ class NotesRepository extends BaseRepository<NoteRow, NoteInsert, typeof notes> 
     await db.delete(actions).where(eq(actions.note_id, noteId));
 
     // Insert new actions
+    const now = new Date().toISOString();
     for (const action of serverActions) {
       await db.insert(actions).values({
         id: action.id,
-        note_id: action.note_id,
+        note_id: action.note_id || noteId,
         action_type: action.action_type,
         status: action.status,
         priority: action.priority,
         title: action.title,
         description: action.description,
         scheduled_date: action.scheduled_date,
-        created_at: action.created_at,
-        updated_at: action.created_at,
+        created_at: action.created_at || now,
+        updated_at: action.created_at || now,
         sync_status: 'synced',
       });
     }

@@ -260,7 +260,9 @@ class SyncEngine {
    * @param invalidateCache - Whether to invalidate query cache after sync (default: false)
    */
   async syncNotes(filters: NoteFilters = {}, invalidateCache: boolean = false): Promise<void> {
-    if (!this.userId) {
+    // Capture userId to avoid race condition if destroy() is called during sync
+    const userId = this.userId;
+    if (!userId) {
       console.warn('[SyncEngine] No user ID, skipping notes sync');
       return;
     }
@@ -287,7 +289,12 @@ class SyncEngine {
           );
           for (const detailResponse of detailResults) {
             if (detailResponse.data) {
-              await notesRepository.upsertFromServer(detailResponse.data, this.userId);
+              try {
+                await notesRepository.upsertFromServer(detailResponse.data, userId);
+              } catch (noteError) {
+                // Log and continue - don't let one bad note kill the entire sync
+                console.warn('[SyncEngine] Failed to upsert note:', detailResponse.data.id, noteError);
+              }
             }
           }
         }
@@ -309,7 +316,8 @@ class SyncEngine {
    * @param invalidateCache - Whether to invalidate query cache after sync (default: false)
    */
   async syncFolders(invalidateCache: boolean = false): Promise<void> {
-    if (!this.userId) {
+    const userId = this.userId;
+    if (!userId) {
       console.warn('[SyncEngine] No user ID, skipping folders sync');
       return;
     }
@@ -323,7 +331,7 @@ class SyncEngine {
       }
 
       if (data) {
-        await foldersRepository.bulkUpsert(data, this.userId);
+        await foldersRepository.bulkUpsert(data, userId);
 
         // Only invalidate cache if explicitly requested
         if (invalidateCache) {
