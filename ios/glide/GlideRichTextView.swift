@@ -89,6 +89,19 @@ final class GlideRichTextView: UIView, UITextViewDelegate {
     }
   }
 
+  /// Prop-based trigger for RTF snapshots.  Increment from JS to request a snapshot.
+  /// Works through the New Architecture interop layer (commands don't).
+  private var lastSnapshotNonce: Int = 0
+  @objc var snapshotNonce: NSNumber = 0 {
+    didSet {
+      let nonce = snapshotNonce.intValue
+      if nonce > 0 && nonce != lastSnapshotNonce {
+        lastSnapshotNonce = nonce
+        requestRtfSnapshot()
+      }
+    }
+  }
+
   @objc var onChange: RCTBubblingEventBlock?
   @objc var onRichSnapshot: RCTBubblingEventBlock?
 

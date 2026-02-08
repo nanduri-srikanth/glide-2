@@ -97,16 +97,7 @@ export default function RichEditorDebugScreen() {
             <TouchableOpacity
               style={styles.button}
               onPress={() => {
-                const handle = editorRef.current;
-                if (!handle) {
-                  setStatus('Editor ref is null — component may not have mounted.');
-                  return;
-                }
-                if (typeof handle.requestRtfSnapshot !== 'function') {
-                  setStatus(`requestRtfSnapshot missing. Handle keys: ${Object.keys(handle).join(', ')}`);
-                  return;
-                }
-                handle.requestRtfSnapshot();
+                editorRef.current?.requestRtfSnapshot();
               }}
             >
               <Text style={styles.buttonText}>Save RTF</Text>

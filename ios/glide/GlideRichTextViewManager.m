@@ -8,6 +8,7 @@ RCT_EXPORT_VIEW_PROPERTY(content, NSString)
 RCT_EXPORT_VIEW_PROPERTY(placeholder, NSString)
 RCT_EXPORT_VIEW_PROPERTY(rtfBase64, NSString)
 RCT_EXPORT_VIEW_PROPERTY(initialPlaintext, NSString)
+RCT_EXPORT_VIEW_PROPERTY(snapshotNonce, NSNumber)
 RCT_EXPORT_VIEW_PROPERTY(onChange, RCTBubblingEventBlock)
 RCT_EXPORT_VIEW_PROPERTY(onRichSnapshot, RCTBubblingEventBlock)
 

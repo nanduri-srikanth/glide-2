@@ -1,9 +1,7 @@
-import React, { forwardRef, useCallback, useImperativeHandle, useRef } from 'react';
+import React, { forwardRef, useCallback, useImperativeHandle, useRef, useState } from 'react';
 import {
-  findNodeHandle,
   Platform,
   requireNativeComponent,
-  NativeModules,
   UIManager,
   ViewProps,
   View,
@@ -23,21 +21,16 @@ type NativeProps = ViewProps & {
   placeholder?: string;
   initialPlaintext?: string;
   rtfBase64?: string;
+  snapshotNonce?: number;
   onChange?: (e: NativeChangeEvent) => void;
   onRichSnapshot?: (e: { nativeEvent: { rtfBase64: string } }) => void;
 };
 
 export type GlideRichTextEditorHandle = {
-  toggleBold: () => void;
-  toggleItalic: () => void;
-  toggleUnderline: () => void;
-  toggleStrikethrough: () => void;
-  toggleHighlight: () => void;
-  getRtfBase64: () => Promise<string | null>;
   requestRtfSnapshot: () => void;
 };
 
-export type GlideRichTextEditorProps = Omit<NativeProps, 'onChange' | 'onRichSnapshot'> & {
+export type GlideRichTextEditorProps = Omit<NativeProps, 'onChange' | 'onRichSnapshot' | 'snapshotNonce'> & {
   onChangeText?: (text: string) => void;
   onChange?: (e: NativeChangeEvent) => void;
   onRichSnapshot?: (rtfBase64: string) => void;
@@ -46,43 +39,14 @@ export type GlideRichTextEditorProps = Omit<NativeProps, 'onChange' | 'onRichSna
 const viewManagerConfig =
   Platform.OS === 'ios' ? UIManager.getViewManagerConfig('GlideRichTextView') : null;
 
-const nativeManager =
-  Platform.OS === 'ios'
-    ? ((NativeModules.GlideRichTextView ??
-        NativeModules.GlideRichTextViewManager) as Record<string, unknown> | undefined)
-    : undefined;
-
 const NativeGlideRichTextView =
   Platform.OS === 'ios' && viewManagerConfig
     ? requireNativeComponent<NativeProps>('GlideRichTextView')
     : null;
 
-function dispatchCommand(viewHandle: number, command: string) {
-  // 1. Try NativeModules (classic bridge, may be unavailable in New Architecture/bridgeless).
-  const fn = nativeManager?.[command];
-  if (typeof fn === 'function') {
-    (fn as (tag: number) => void)(viewHandle);
-    return;
-  }
-
-  // 2. Try numeric command ID from view manager config.
-  const commandId = viewManagerConfig?.Commands?.[command];
-  if (commandId != null) {
-    UIManager.dispatchViewManagerCommand(viewHandle, commandId, []);
-    return;
-  }
-
-  // 3. Dispatch with string command name (RN 0.71+ / New Architecture interop).
-  try {
-    UIManager.dispatchViewManagerCommand(viewHandle, command, []);
-  } catch (e) {
-    console.warn(`[GlideRichTextEditor] Command dispatch failed: ${command}`, e);
-  }
-}
-
 export const GlideRichTextEditor = forwardRef<GlideRichTextEditorHandle, GlideRichTextEditorProps>(
   ({ onChangeText, onChange, onRichSnapshot, ...props }, ref) => {
-    const nativeRef = useRef<any>(null);
+    const [snapshotNonce, setSnapshotNonce] = useState(0);
 
     const handleChange = useCallback(
       (e: NativeChangeEvent) => {
@@ -99,45 +63,12 @@ export const GlideRichTextEditor = forwardRef<GlideRichTextEditorHandle, GlideRi
       [onRichSnapshot]
     );
 
+    // Prop-based trigger: incrementing snapshotNonce causes the native view to
+    // capture an RTF snapshot and fire onRichSnapshot.  This avoids command
+    // dispatch which doesn't work through the New Architecture interop layer.
     useImperativeHandle(ref, () => ({
-      toggleBold: () => {
-        const tag = findNodeHandle(nativeRef.current);
-        if (!tag) return;
-        dispatchCommand(tag, 'toggleBold');
-      },
-      toggleItalic: () => {
-        const tag = findNodeHandle(nativeRef.current);
-        if (!tag) return;
-        dispatchCommand(tag, 'toggleItalic');
-      },
-      toggleUnderline: () => {
-        const tag = findNodeHandle(nativeRef.current);
-        if (!tag) return;
-        dispatchCommand(tag, 'toggleUnderline');
-      },
-      toggleStrikethrough: () => {
-        const tag = findNodeHandle(nativeRef.current);
-        if (!tag) return;
-        dispatchCommand(tag, 'toggleStrikethrough');
-      },
-      toggleHighlight: () => {
-        const tag = findNodeHandle(nativeRef.current);
-        if (!tag) return;
-        dispatchCommand(tag, 'toggleHighlight');
-      },
-      getRtfBase64: async () => {
-        const tag = findNodeHandle(nativeRef.current);
-        if (!tag) return null;
-        const fn = nativeManager?.getRtfBase64;
-        if (typeof fn === 'function') {
-          return (fn as (t: number) => Promise<string>)(tag);
-        }
-        return null;
-      },
       requestRtfSnapshot: () => {
-        const tag = findNodeHandle(nativeRef.current);
-        if (!tag) return;
-        dispatchCommand(tag, 'requestRtfSnapshot');
+        setSnapshotNonce(n => n + 1);
       },
     }), []);
 
@@ -162,8 +93,8 @@ export const GlideRichTextEditor = forwardRef<GlideRichTextEditorHandle, GlideRi
 
     return (
       <NativeGlideRichTextView
-        ref={nativeRef}
         {...props}
+        snapshotNonce={snapshotNonce}
         onChange={handleChange}
         onRichSnapshot={handleRichSnapshot}
       />
@@ -172,4 +103,3 @@ export const GlideRichTextEditor = forwardRef<GlideRichTextEditorHandle, GlideRi
 );
 
 GlideRichTextEditor.displayName = 'GlideRichTextEditor';
-// v2: requestRtfSnapshot + getRtfBase64 in imperative handle
