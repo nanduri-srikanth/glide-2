@@ -5,7 +5,8 @@ import { BaseRepository } from './BaseRepository';
 import type { ActionResponse } from '@/services/notes';
 
 export interface LocalActionResponse extends ActionResponse {
-  sync_status: SyncStatus | null;
+  // API types make this optional; locally we always have a value.
+  sync_status: SyncStatus;
 }
 
 export interface CreateActionInput {
@@ -67,7 +68,7 @@ class ActionsRepository extends BaseRepository<ActionRow, ActionInsert, typeof a
       external_url: null,
       created_at: action.created_at,
       executed_at: null,
-      sync_status: action.sync_status,
+      sync_status: action.sync_status ?? 'synced',
     };
   }
 
@@ -137,6 +138,7 @@ class ActionsRepository extends BaseRepository<ActionRow, ActionInsert, typeof a
       description: serverAction.description,
       scheduled_date: serverAction.scheduled_date,
       created_at: serverAction.created_at,
+      // Server payload doesn't include updated_at; use created_at as best-effort.
       updated_at: serverAction.created_at,
       sync_status: 'synced',
     };

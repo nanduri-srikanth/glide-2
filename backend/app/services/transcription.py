@@ -4,6 +4,7 @@ import tempfile
 from typing import BinaryIO
 
 from app.config import get_settings
+from app.core.errors import ExternalServiceError
 from app.schemas.voice_schemas import TranscriptionResult
 from app.utils.audio import get_audio_duration
 
@@ -54,11 +55,14 @@ class TranscriptionService:
             # Using whisper-large-v3-turbo for 2-3x faster transcription
             # with nearly identical quality to whisper-large-v3
             with open(temp_path, "rb") as audio:
-                response = self.groq_client.audio.transcriptions.create(
-                    model="whisper-large-v3-turbo",
-                    file=audio,
-                    response_format="verbose_json",
-                )
+                try:
+                    response = self.groq_client.audio.transcriptions.create(
+                        model="whisper-large-v3-turbo",
+                        file=audio,
+                        response_format="verbose_json",
+                    )
+                except Exception as e:
+                    raise ExternalServiceError(service="transcription", message=f"Groq transcription failed: {e}") from e
 
             return TranscriptionResult(
                 text=response.text,
@@ -105,11 +109,14 @@ class TranscriptionService:
                 )
 
             with open(temp_path, "rb") as audio:
-                groq_response = self.groq_client.audio.transcriptions.create(
-                    model="whisper-large-v3-turbo",
-                    file=audio,
-                    response_format="verbose_json",
-                )
+                try:
+                    groq_response = self.groq_client.audio.transcriptions.create(
+                        model="whisper-large-v3-turbo",
+                        file=audio,
+                        response_format="verbose_json",
+                    )
+                except Exception as e:
+                    raise ExternalServiceError(service="transcription", message=f"Groq transcription failed: {e}") from e
 
             return TranscriptionResult(
                 text=groq_response.text,

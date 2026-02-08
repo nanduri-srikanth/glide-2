@@ -29,6 +29,7 @@ from app.core.errors import (
     ValidationError,
     NotFoundError,
     ExternalServiceError,
+    APIError,
 )
 
 logger = logging.getLogger(__name__)
@@ -525,6 +526,9 @@ async def synthesize_note(
             updated_at=note.updated_at or note.created_at,
         )
 
+    except APIError:
+        await db.rollback()
+        raise
     except Exception as e:
         await db.rollback()
         logger.exception(f"Failed to synthesize note: {e}")

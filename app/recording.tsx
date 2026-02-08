@@ -8,9 +8,14 @@ import { FolderSelectionSheet } from '@/components/notes/FolderSelectionSheet';
 import { NoteSelectionSheet } from '@/components/notes/NoteSelectionSheet';
 import { useRecording } from '@/hooks/useRecording';
 import { useAuth } from '@/context/AuthContext';
+import { useNetwork } from '@/context/NetworkContext';
 import { useNotes } from '@/context/NotesContext';
 import { notesService } from '@/services/notes';
 import { voiceService } from '@/services/voice';
+import { notesRepository } from '@/lib/repositories';
+import { audioUploader } from '@/lib/sync';
+import { getQueryClient, queryKeys } from '@/lib/queryClient';
+import { isDatabaseInitialized } from '@/lib/database';
 
 type FlowMode = 'idle' | 'quick' | 'add-to-note' | 'into-folder';
 
@@ -18,7 +23,8 @@ export default function RecordingScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const { folderId, autoStart } = useLocalSearchParams<{ folderId?: string; autoStart?: string }>();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
+  const { isOnline } = useNetwork();
 
   // Safe navigation back - handles both modal and stack navigation
   const safeGoBack = () => {
@@ -30,6 +36,7 @@ export default function RecordingScreen() {
   };
   const hasAutoStarted = useRef(false);
   const { fetchFolders } = useNotes();
+  const queryClient = getQueryClient();
   const {
     isRecording,
     isPaused,
@@ -134,6 +141,49 @@ export default function RecordingScreen() {
     }, 1200);
   };
 
+  const refreshNotesAfterSynthesis = async (noteId?: string) => {
+    // Update local SQLite from server for immediate UI consistency
+    if (noteId && isDatabaseInitialized() && user?.id) {
+      const { data } = await notesService.getNote(noteId);
+      if (data) {
+        await notesRepository.upsertFromServer(data, user.id);
+      }
+    }
+
+    // Invalidate queries to refresh list + counts
+    queryClient.invalidateQueries({ queryKey: queryKeys.notes.lists() });
+    queryClient.invalidateQueries({ queryKey: queryKeys.folders.all });
+  };
+
+  const createOfflinePendingNote = async (
+    textToUse: string | null,
+    audioToUse: string | null,
+    targetFolderId?: string
+  ): Promise<boolean> => {
+    if (!isDatabaseInitialized() || !user?.id) return false;
+
+    const now = Date.now();
+    const id = `local-${now}`;
+    const title = textToUse?.trim().split('\n')[0]?.slice(0, 80) || 'New Note';
+
+    await notesRepository.create({
+      id,
+      user_id: user.id,
+      title,
+      transcript: textToUse || '',
+      folder_id: targetFolderId || null,
+      local_audio_path: audioToUse || undefined,
+    });
+
+    if (audioToUse) {
+      await audioUploader.queueUpload(id, audioToUse);
+    }
+
+    queryClient.invalidateQueries({ queryKey: queryKeys.notes.lists() });
+    queryClient.invalidateQueries({ queryKey: queryKeys.folders.all });
+    return true;
+  };
+
   const handleStartRecording = async () => {
     await startRecording();
   };
@@ -228,6 +278,17 @@ export default function RecordingScreen() {
       // Coming from a specific folder context
       setShowProcessing(true);
 
+      if (!isOnline) {
+        const created = await createOfflinePendingNote(notes, finalAudioUri || null, folderId);
+        if (created) {
+          showSuccessAndNavigateBack('Saved offline (pending sync)');
+          return;
+        }
+        setShowProcessing(false);
+        Alert.alert('Offline', 'Unable to save locally. Please try again when online.');
+        return;
+      }
+
       const { data, error: apiError } = await voiceService.synthesizeNote(
         {
           textInput: notes || undefined,
@@ -241,6 +302,7 @@ export default function RecordingScreen() {
 
       if (data) {
         // Success - show animation and go back
+        await refreshNotesAfterSynthesis(data.note_id);
         fetchFolders();
         showSuccessAndNavigateBack('Note saved');
       } else {
@@ -359,6 +421,18 @@ export default function RecordingScreen() {
     const audioToUse = audioUri ?? pendingAudioUri;
 
     try {
+      if (!isOnline) {
+        const created = await createOfflinePendingNote(textToUse, audioToUse || null, selectedFolderId);
+        if (created) {
+          showSuccessAndNavigateBack('Saved offline (pending sync)');
+          return;
+        }
+        setSheetProcessing(false);
+        setShowProcessing(false);
+        Alert.alert('Offline', 'Unable to save locally. Please try again when online.');
+        return;
+      }
+
       // Use the new synthesis endpoint for both audio+text and text-only
       const { data, error: apiError } = await voiceService.synthesizeNote(
         {
@@ -376,6 +450,7 @@ export default function RecordingScreen() {
       }
 
       // Success - show animation and go back
+      await refreshNotesAfterSynthesis(data?.note_id);
       fetchFolders();
       const folderName = data?.folder_name;
       const successMsg = folderName ? `Saved to ${folderName}` : 'Note saved';

@@ -15,7 +15,9 @@ class User(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email = Column(String(255), unique=True, nullable=False, index=True)
-    hashed_password = Column(String(255), nullable=False)
+    # Supabase Auth users won't have local password hashes.
+    hashed_password = Column(String(255), nullable=True)
+    supabase_user_id = Column(UUID(as_uuid=True), unique=True, nullable=True, index=True)
     full_name = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
@@ -29,6 +31,11 @@ class User(Base):
 
     apple_caldav_username = Column(String(255), nullable=True)
     apple_caldav_password = Column(Text, nullable=True)  # App-specific password
+
+    # Auth provider flags (Supabase)
+    auth_apple = Column(Boolean, default=False)
+    auth_google = Column(Boolean, default=False)
+    auth_microsoft = Column(Boolean, default=False)
 
     # User preferences
     default_folder_id = Column(UUID(as_uuid=True), nullable=True)

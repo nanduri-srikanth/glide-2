@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -13,17 +13,15 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import * as AppleAuthentication from 'expo-apple-authentication';
 import { NotesColors } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import { validateRegistration, RegistrationValidationResult } from '@/utils/validation';
-import { RateLimitStatus, checkRateLimit } from '@/utils/rateLimit';
 
 type AuthMode = 'login' | 'register';
 
 export default function AuthScreen() {
   const router = useRouter();
-  const { login, register, signInWithApple, isLoading } = useAuth();
+  const { login, register, signInWithProvider, resetPassword, devLogin, isLoading } = useAuth();
   const [mode, setMode] = useState<AuthMode>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -31,47 +29,8 @@ export default function AuthScreen() {
   const [name, setName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [appleAuthAvailable, setAppleAuthAvailable] = useState(false);
-  const [isAppleLoading, setIsAppleLoading] = useState(false);
+  const [isProviderLoading, setIsProviderLoading] = useState(false);
   const [validationErrors, setValidationErrors] = useState<RegistrationValidationResult['errors']>({});
-  const [rateLimitStatus, setRateLimitStatus] = useState<RateLimitStatus | null>(null);
-  const [remainingTime, setRemainingTime] = useState(0);
-
-  useEffect(() => {
-    AppleAuthentication.isAvailableAsync().then(setAppleAuthAvailable);
-  }, []);
-
-  // Countdown timer for lockout
-  useEffect(() => {
-    if (!rateLimitStatus?.isLockedOut || remainingTime <= 0) {
-      return;
-    }
-
-    const timer = setInterval(() => {
-      setRemainingTime(prev => {
-        if (prev <= 1) {
-          // Lockout expired, check status
-          checkRateLimit(email).then(setRateLimitStatus);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [rateLimitStatus, remainingTime, email]);
-
-  // Check rate limit when email changes
-  useEffect(() => {
-    if (mode === 'login' && email) {
-      checkRateLimit(email).then(status => {
-        setRateLimitStatus(status);
-        if (status.isLockedOut) {
-          setRemainingTime(status.lockoutRemainingSeconds);
-        }
-      });
-    }
-  }, [email, mode]);
 
   const handleSubmit = async () => {
     // Clear previous validation errors
@@ -88,14 +47,6 @@ export default function AuthScreen() {
       if (result.success) {
         router.replace('/(tabs)');
       } else {
-        // Update rate limit status from result
-        if (result.rateLimitStatus) {
-          setRateLimitStatus(result.rateLimitStatus);
-          if (result.rateLimitStatus.isLockedOut) {
-            setRemainingTime(result.rateLimitStatus.lockoutRemainingSeconds);
-          }
-        }
-
         Alert.alert(
           'Error',
           result.error || 'Invalid email or password. Please try again.'
@@ -140,15 +91,37 @@ export default function AuthScreen() {
     setValidationErrors({});
   };
 
-  const handleAppleSignIn = async () => {
-    setIsAppleLoading(true);
-    const result = await signInWithApple();
-    setIsAppleLoading(false);
+  const handleProviderSignIn = async (provider: 'apple' | 'google' | 'azure') => {
+    setIsProviderLoading(true);
+    const result = await signInWithProvider(provider);
+    setIsProviderLoading(false);
 
     if (result.success) {
       router.replace('/(tabs)');
-    } else if (result.error && result.error !== 'Sign-In was cancelled') {
+    } else if (result.error && result.error !== 'Sign-in cancelled') {
       Alert.alert('Error', result.error);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!email.trim()) {
+      Alert.alert('Enter your email', 'Please enter your email to reset your password.');
+      return;
+    }
+    const result = await resetPassword(email.trim());
+    if (result.success) {
+      Alert.alert('Check your email', 'Password reset link sent.');
+    } else {
+      Alert.alert('Error', result.error || 'Failed to send reset email.');
+    }
+  };
+
+  const handleDevLogin = async () => {
+    const result = await devLogin();
+    if (result.success) {
+      router.replace('/(tabs)');
+    } else {
+      Alert.alert('Dev Login Error', result.error || 'Dev login failed.');
     }
   };
 
@@ -167,37 +140,12 @@ export default function AuthScreen() {
             <Ionicons name="mic" size={48} color={NotesColors.primary} />
           </View>
           <Text style={styles.appName}>Glide</Text>
-          <Text style={styles.tagline}>Voice notes, powered by AI</Text>
+          <Text style={styles.subtitle}>Stream Your Consciousness</Text>
         </View>
 
-        {/* Rate Limit Lockout Warning */}
-        {mode === 'login' && rateLimitStatus?.isLockedOut && (
-          <View style={styles.lockoutWarning}>
-            <Ionicons name="lock-closed" size={24} color="#EF4444" />
-            <View style={styles.lockoutContent}>
-              <Text style={styles.lockoutTitle}>Account Temporarily Locked</Text>
-              <Text style={styles.lockoutMessage}>
-                Too many failed login attempts. Please wait for the lockout to expire.
-              </Text>
-              <Text style={styles.lockoutTimer}>
-                Time remaining: {Math.floor(remainingTime / 60)}:{(remainingTime % 60).toString().padStart(2, '0')}
-              </Text>
-            </View>
-          </View>
-        )}
-
-        {/* Remaining Attempts Warning */}
-        {mode === 'login' && !rateLimitStatus?.isLockedOut && rateLimitStatus && rateLimitStatus.remainingAttempts < 3 && (
-          <View style={styles.attemptsWarning}>
-            <Ionicons name="warning" size={20} color="#F59E0B" />
-            <Text style={styles.attemptsText}>
-              {rateLimitStatus.remainingAttempts} attempt{rateLimitStatus.remainingAttempts !== 1 ? 's' : ''} remaining
-            </Text>
-          </View>
-        )}
-
         {/* Form */}
-        <View style={styles.form}>
+        <View style={styles.formCard}>
+          <View style={styles.form}>
           {mode === 'register' && (
             <>
               <View style={styles.inputContainer}>
@@ -318,10 +266,10 @@ export default function AuthScreen() {
           <TouchableOpacity
             style={[
               styles.submitButton,
-              (isLoading || (mode === 'login' && rateLimitStatus?.isLockedOut)) && styles.submitButtonDisabled
+              isLoading && styles.submitButtonDisabled
             ]}
             onPress={handleSubmit}
-            disabled={isLoading || (mode === 'login' && rateLimitStatus?.isLockedOut)}
+            disabled={isLoading}
           >
             {isLoading ? (
               <ActivityIndicator color={NotesColors.textPrimary} />
@@ -333,31 +281,41 @@ export default function AuthScreen() {
           </TouchableOpacity>
 
           {mode === 'login' && (
-            <TouchableOpacity style={styles.forgotButton}>
+            <TouchableOpacity style={styles.forgotButton} onPress={handleForgotPassword}>
               <Text style={styles.forgotText}>Forgot Password?</Text>
             </TouchableOpacity>
           )}
+          </View>
         </View>
 
         {/* Social Sign In */}
         <View style={styles.socialContainer}>
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or continue with</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
           <View style={styles.socialButtons}>
-            {appleAuthAvailable && (
-              <AppleAuthentication.AppleAuthenticationButton
-                buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
-                buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
-                cornerRadius={12}
-                style={styles.appleButton}
-                onPress={handleAppleSignIn}
-              />
-            )}
-            {isAppleLoading && (
+            <TouchableOpacity
+              style={styles.providerButton}
+              onPress={() => handleProviderSignIn('apple')}
+              disabled={isProviderLoading}
+            >
+              <Ionicons name="logo-apple" size={18} color={NotesColors.textPrimary} />
+              <Text style={styles.providerText}>Apple</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.providerButton}
+              onPress={() => handleProviderSignIn('google')}
+              disabled={isProviderLoading}
+            >
+              <Ionicons name="logo-google" size={18} color={NotesColors.textPrimary} />
+              <Text style={styles.providerText}>Google</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.providerButton}
+              onPress={() => handleProviderSignIn('azure')}
+              disabled={isProviderLoading}
+            >
+              <Ionicons name="logo-windows" size={18} color={NotesColors.textPrimary} />
+              <Text style={styles.providerText}>Microsoft</Text>
+            </TouchableOpacity>
+            {isProviderLoading && (
               <View style={styles.appleLoadingOverlay}>
                 <ActivityIndicator color={NotesColors.primary} />
               </View>
@@ -365,12 +323,20 @@ export default function AuthScreen() {
           </View>
         </View>
 
+        {__DEV__ && (
+          <View style={styles.devLoginContainer}>
+            <TouchableOpacity style={styles.devLoginButton} onPress={handleDevLogin}>
+              <Text style={styles.devLoginText}>Dev Login</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Toggle Mode */}
-        <View style={styles.toggleContainer}>
+        <View style={styles.toggleBar}>
           <Text style={styles.toggleText}>
             {mode === 'login' ? "Don't have an account?" : 'Already have an account?'}
           </Text>
-          <TouchableOpacity onPress={toggleMode}>
+          <TouchableOpacity onPress={toggleMode} style={styles.toggleButton}>
             <Text style={styles.toggleLink}>
               {mode === 'login' ? 'Sign Up' : 'Sign In'}
             </Text>
@@ -396,7 +362,7 @@ const styles = StyleSheet.create({
   logoContainer: {
     alignItems: 'center',
     marginTop: 20,
-    marginBottom: 40,
+    marginBottom: 24,
   },
   logoCircle: {
     width: 100,
@@ -411,11 +377,24 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: '700',
     color: NotesColors.textPrimary,
-    marginBottom: 4,
+    marginBottom: 2,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: NotesColors.textSecondary,
+    marginBottom: 6,
   },
   tagline: {
-    fontSize: 16,
-    color: NotesColors.textSecondary,
+    fontSize: 18,
+    fontWeight: '600',
+    color: NotesColors.textPrimary,
+  },
+  formCard: {
+    backgroundColor: NotesColors.card,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: NotesColors.border,
   },
   form: {
     gap: 16,
@@ -427,6 +406,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 16,
     height: 56,
+    borderWidth: 1,
+    borderColor: NotesColors.border,
   },
   inputIcon: {
     marginRight: 12,
@@ -442,7 +423,7 @@ const styles = StyleSheet.create({
   submitButton: {
     backgroundColor: NotesColors.primary,
     borderRadius: 12,
-    height: 56,
+    height: 54,
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 8,
@@ -464,30 +445,46 @@ const styles = StyleSheet.create({
     color: NotesColors.primary,
   },
   socialContainer: {
-    marginTop: 32,
+    marginTop: 20,
   },
-  divider: {
-    flexDirection: 'row',
+  devLoginContainer: {
+    marginTop: 16,
     alignItems: 'center',
-    marginBottom: 24,
   },
-  dividerLine: {
-    flex: 1,
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: NotesColors.textSecondary,
+  devLoginButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: NotesColors.border,
+    backgroundColor: NotesColors.card,
   },
-  dividerText: {
-    marginHorizontal: 16,
+  devLoginText: {
     fontSize: 14,
+    fontWeight: '600',
     color: NotesColors.textSecondary,
   },
   socialButtons: {
-    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
     position: 'relative',
   },
-  appleButton: {
-    width: '100%',
-    height: 56,
+  providerButton: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: NotesColors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: NotesColors.card,
+    flexDirection: 'row',
+  },
+  providerText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: NotesColors.textPrimary,
   },
   appleLoadingOverlay: {
     position: 'absolute',
@@ -500,22 +497,33 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.3)',
     borderRadius: 12,
   },
-  toggleContainer: {
+  toggleBar: {
     flexDirection: 'row',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     alignItems: 'center',
     marginTop: 'auto',
     marginBottom: 24,
-    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: NotesColors.card,
+    borderWidth: 1,
+    borderColor: NotesColors.border,
   },
   toggleText: {
     fontSize: 14,
     color: NotesColors.textSecondary,
   },
+  toggleButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    backgroundColor: NotesColors.primary,
+  },
   toggleLink: {
     fontSize: 14,
     fontWeight: '600',
-    color: NotesColors.primary,
+    color: NotesColors.textPrimary,
   },
   errorText: {
     fontSize: 12,
@@ -523,50 +531,5 @@ const styles = StyleSheet.create({
     marginTop: -8,
     marginBottom: 4,
     marginLeft: 16,
-  },
-  lockoutWarning: {
-    flexDirection: 'row',
-    backgroundColor: '#FEF2F2',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    borderLeftWidth: 4,
-    borderLeftColor: '#EF4444',
-  },
-  lockoutContent: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  lockoutTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#991B1B',
-    marginBottom: 4,
-  },
-  lockoutMessage: {
-    fontSize: 14,
-    color: '#7F1D1D',
-    marginBottom: 8,
-  },
-  lockoutTimer: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#DC2626',
-  },
-  attemptsWarning: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFBEB',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
-    alignItems: 'center',
-    borderLeftWidth: 4,
-    borderLeftColor: '#F59E0B',
-  },
-  attemptsText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#92400E',
-    marginLeft: 8,
   },
 });

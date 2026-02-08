@@ -5,11 +5,12 @@ import { BaseRepository } from './BaseRepository';
 import type { NoteFilters, NoteListItem, NoteDetailResponse, ActionResponse } from '@/services/notes';
 
 export interface LocalNoteListItem extends NoteListItem {
-  sync_status: SyncStatus | null;
+  // API types make this optional; locally we always have a value.
+  sync_status: SyncStatus;
 }
 
 export interface LocalNoteDetail extends NoteDetailResponse {
-  sync_status: SyncStatus | null;
+  sync_status: SyncStatus;
   local_audio_path: string | null;
 }
 
@@ -118,7 +119,7 @@ class NotesRepository extends BaseRepository<NoteRow, NoteInsert, typeof notes> 
       reminder_count: actionCounts.reminder || 0,
       created_at: note.created_at,
       updated_at: note.updated_at,
-      sync_status: note.sync_status,
+      sync_status: note.sync_status ?? 'synced',
     };
   }
 
@@ -171,7 +172,7 @@ class NotesRepository extends BaseRepository<NoteRow, NoteInsert, typeof notes> 
       actions: noteActions.map(a => this.toActionResponse(a)),
       created_at: note.created_at,
       updated_at: note.updated_at,
-      sync_status: note.sync_status,
+      sync_status: note.sync_status ?? 'synced',
       local_audio_path: note.local_audio_path,
     };
   }
