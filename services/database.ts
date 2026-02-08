@@ -18,7 +18,7 @@ import { Platform } from 'react-native';
 export const DB_NAME = 'glide.db';
 
 // Database version for migrations
-export const DB_VERSION = 5;
+export const DB_VERSION = 6;
 
 // Enable debug logging in development
 const DEBUG = __DEV__;
@@ -255,6 +255,17 @@ class DatabaseManager {
       );
     `);
 
+    // Create note_rich_content table for storing rich text (RTF) per note
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS note_rich_content (
+        note_id TEXT PRIMARY KEY,
+        rtf_base64 TEXT NOT NULL,
+        plaintext TEXT,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+      );
+    `);
+
     if (DEBUG) console.log('[Database] Tables created successfully');
   }
 
@@ -395,6 +406,19 @@ class DatabaseManager {
         // No schema changes — createTables() already has the correct schema
         break;
 
+      case 6:
+        // Add note_rich_content table for storing rich text (RTF) per note
+        await this.db.execAsync(`
+          CREATE TABLE IF NOT EXISTS note_rich_content (
+            note_id TEXT PRIMARY KEY,
+            rtf_base64 TEXT NOT NULL,
+            plaintext TEXT,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+          );
+        `);
+        break;
+
       default:
         throw new Error(`Unknown migration version: ${version}`);
     }
@@ -423,6 +447,7 @@ class DatabaseManager {
 
     // Drop all tables
     await db.execAsync(`
+      DROP TABLE IF EXISTS note_rich_content;
       DROP TABLE IF EXISTS audio_uploads;
       DROP TABLE IF EXISTS sync_queue;
       DROP TABLE IF EXISTS actions;

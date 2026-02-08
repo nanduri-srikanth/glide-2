@@ -41,6 +41,9 @@ import { generateTitleFromContent, isUserSetTitle } from '@/utils/textUtils';
 import { AddContentModal } from '@/components/notes/AddContentModal';
 import { MarkdownContent } from '@/components/notes/MarkdownContent';
 import { InputHistoryEntry } from '@/services/voice';
+import { GlideRichTextEditor, GlideRichTextEditorHandle } from '@/components/notes/GlideRichTextEditor';
+import { useRichEditorEnabled } from '@/hooks/useRichEditorEnabled';
+import { richContentRepository } from '@/lib/repositories';
 
 const INPUT_ACCESSORY_ID = 'note-formatting-toolbar';
 
@@ -193,7 +196,13 @@ export default function NoteDetailScreen() {
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const titleInputRef = useRef<TextInput>(null);
   const transcriptInputRef = useRef<TextInput>(null);
+  const richEditorRef = useRef<GlideRichTextEditorHandle>(null);
   const scrollY = useRef(new Animated.Value(0)).current;
+
+  // Rich editor state
+  const richEditorEnabled = useRichEditorEnabled();
+  const [richRtfBase64, setRichRtfBase64] = useState<string | undefined>(undefined);
+  const [richEditorKey, setRichEditorKey] = useState(0);
 
   // Title auto-generation tracking
   const [userEditedTitle, setUserEditedTitle] = useState(false);
@@ -253,6 +262,19 @@ export default function NoteDetailScreen() {
       setUserEditedTitle(isUserSetTitle(note.title));
     }
   }, [note?.title, note?.transcript, isEditing]);
+
+  // Load persisted RTF content when note opens (rich editor only)
+  useEffect(() => {
+    if (!richEditorEnabled || !noteId) return;
+    let cancelled = false;
+    richContentRepository.get(noteId).then((row) => {
+      if (cancelled) return;
+      if (row) {
+        setRichRtfBase64(row.rtf_base64);
+      }
+    }).catch(console.warn);
+    return () => { cancelled = true; };
+  }, [richEditorEnabled, noteId]);
 
   // Debounced auto-save function
   const debouncedSave = useCallback(async (title: string, transcript: string) => {
@@ -346,6 +368,11 @@ export default function NoteDetailScreen() {
       clearTimeout(saveTimeoutRef.current);
     }
 
+    // Request RTF snapshot (persisted via onRichSnapshot callback)
+    if (richEditorEnabled) {
+      richEditorRef.current?.requestRtfSnapshot();
+    }
+
     // Save if there are unsaved changes
     if (hasUnsavedChanges) {
       setIsSaving(true);
@@ -356,7 +383,7 @@ export default function NoteDetailScreen() {
 
     Keyboard.dismiss();
     setIsEditing(false);
-  }, [hasUnsavedChanges, editedTitle, editedTranscript, updateNote]);
+  }, [hasUnsavedChanges, editedTitle, editedTranscript, updateNote, richEditorEnabled]);
 
   // Handle blur - exit edit mode if neither field is focused
   const handleTitleBlur = useCallback(() => {
@@ -378,6 +405,12 @@ export default function NoteDetailScreen() {
       }
     }, 100);
   }, [isTitleFocused, handleDoneEditing]);
+
+  // Rich editor: persist RTF snapshot when received from native side
+  const handleRichSnapshot = useCallback((rtfBase64: string) => {
+    if (!noteId) return;
+    richContentRepository.save(noteId, rtfBase64, editedTranscript).catch(console.warn);
+  }, [noteId, editedTranscript]);
 
   // Cleanup timeout on unmount
   useEffect(() => {
@@ -774,7 +807,7 @@ export default function NoteDetailScreen() {
               multiline
               blurOnSubmit
               returnKeyType="done"
-              inputAccessoryViewID={INPUT_ACCESSORY_ID}
+              inputAccessoryViewID={richEditorEnabled ? undefined : INPUT_ACCESSORY_ID}
             />
           ) : (
             <Animated.View style={{
@@ -898,19 +931,32 @@ export default function NoteDetailScreen() {
 
         {/* Transcript - flows naturally below tags/actions */}
         {isEditing ? (
-          <TextInput
-            ref={transcriptInputRef}
-            style={styles.transcriptText}
-            value={editedTranscript}
-            onChangeText={handleTranscriptChange}
-            onFocus={() => setIsTranscriptFocused(true)}
-            onBlur={handleTranscriptBlur}
-            placeholder="Start typing..."
-            placeholderTextColor={NotesColors.textSecondary}
-            multiline
-            textAlignVertical="top"
-            inputAccessoryViewID={INPUT_ACCESSORY_ID}
-          />
+          richEditorEnabled ? (
+            <GlideRichTextEditor
+              key={richEditorKey}
+              ref={richEditorRef}
+              rtfBase64={richRtfBase64}
+              initialPlaintext={richRtfBase64 ? undefined : editedTranscript}
+              onChangeText={handleTranscriptChange}
+              onRichSnapshot={handleRichSnapshot}
+              placeholder="Start typing..."
+              style={styles.richEditor}
+            />
+          ) : (
+            <TextInput
+              ref={transcriptInputRef}
+              style={styles.transcriptText}
+              value={editedTranscript}
+              onChangeText={handleTranscriptChange}
+              onFocus={() => setIsTranscriptFocused(true)}
+              onBlur={handleTranscriptBlur}
+              placeholder="Start typing..."
+              placeholderTextColor={NotesColors.textSecondary}
+              multiline
+              textAlignVertical="top"
+              inputAccessoryViewID={INPUT_ACCESSORY_ID}
+            />
+          )
         ) : (
           <TouchableOpacity onPress={handleEdit} activeOpacity={0.7}>
             <MarkdownContent content={note.transcript} />
@@ -918,8 +964,8 @@ export default function NoteDetailScreen() {
         )}
       </Animated.ScrollView>
 
-      {/* Formatting Toolbar - appears above keyboard */}
-      {Platform.OS === 'ios' && (
+      {/* Formatting Toolbar - appears above keyboard (hidden when native rich editor is active) */}
+      {Platform.OS === 'ios' && !richEditorEnabled && (
         <InputAccessoryView nativeID={INPUT_ACCESSORY_ID}>
           <FormattingToolbar
             inputRef={transcriptInputRef}
@@ -1205,6 +1251,10 @@ const styles = StyleSheet.create({
     color: NotesColors.textPrimary,
     marginTop: 8,
     minHeight: 100,
+  },
+  richEditor: {
+    minHeight: 300,
+    marginTop: 8,
   },
   // Input History styles
   inputHistorySection: {

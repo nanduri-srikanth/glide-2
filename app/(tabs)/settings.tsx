@@ -139,6 +139,18 @@ export default function SettingsScreen() {
               title="About"
               subtitle="Glide v1.0.0"
             />
+
+            {__DEV__ && (
+              <>
+                <View style={styles.sectionDivider} />
+                <SettingItem
+                  icon="flask-outline"
+                  title="Rich Editor Debug"
+                  subtitle="Native UITextView editor sandbox"
+                  onPress={() => router.push('/debug/rich-editor')}
+                />
+              </>
+            )}
           </View>
         )}
       </ScrollView>

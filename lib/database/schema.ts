@@ -87,6 +87,16 @@ export const audioUploads = sqliteTable('audio_uploads', {
   uploaded_at: text('uploaded_at'),
 });
 
+export const noteRichContent = sqliteTable('note_rich_content', {
+  note_id: text('note_id').primaryKey(),
+  rtf_base64: text('rtf_base64').notNull(),
+  plaintext: text('plaintext'),
+  updated_at: text('updated_at').notNull(),
+});
+
+export type NoteRichContentRow = typeof noteRichContent.$inferSelect;
+export type NoteRichContentInsert = typeof noteRichContent.$inferInsert;
+
 // Type exports for use in repositories
 export type NoteRow = typeof notes.$inferSelect;
 export type NoteInsert = typeof notes.$inferInsert;

@@ -282,6 +282,7 @@ function RootLayoutNav() {
                 <Stack.Screen name="notes" options={{ headerShown: false }} />
                 <Stack.Screen name="recording" options={{ presentation: 'modal', headerShown: false }} />
                 <Stack.Screen name="auth" options={{ headerShown: false }} />
+                <Stack.Screen name="debug" options={{ headerShown: false }} />
               </Stack>
             </AuthGuard>
           </SyncProvider>
