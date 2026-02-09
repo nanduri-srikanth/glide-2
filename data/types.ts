@@ -1,93 +1,87 @@
-// TypeScript interfaces for the Notes app
+// Shared domain types for the React Native app.
+// Kept intentionally UI-focused (not 1:1 with backend/DB schemas).
 
-// Base interface for all actions - supports future versioning
-export interface BaseAction {
+export type ActionType = 'calendar' | 'email' | 'reminder';
+
+export type ActionSource = 'ai' | 'user';
+
+export interface BaseEditableAction {
   id: string;
-  source?: 'ai' | 'user';  // Whether AI extracted or user created (optional for backwards compat)
-  isNew?: boolean;         // Locally created, not yet saved to server
-  isDeleted?: boolean;     // Soft delete for tracking changes
-  isModified?: boolean;    // User has edited this action
+  source?: ActionSource;
+  // Local-only editing state
+  isNew?: boolean;
+  isModified?: boolean;
+  isDeleted?: boolean;
 }
 
-export interface CalendarAction extends BaseAction {
+export interface CalendarAction extends BaseEditableAction {
   title: string;
-  date: string;
-  time?: string;
+  date: string; // YYYY-MM-DD (or ISO date string in older data)
+  time?: string; // localized time string
   location?: string;
   attendees?: string[];
-  status: 'created' | 'pending' | 'confirmed';
+  status: 'pending' | 'confirmed' | 'created';
 }
 
-export interface EmailAction extends BaseAction {
+export interface EmailAction extends BaseEditableAction {
   to: string;
   subject: string;
   body?: string;
   preview?: string;
-  status: 'draft' | 'sent' | 'scheduled';
   scheduledTime?: string;
+  status: 'draft' | 'sent' | 'scheduled';
 }
 
-export interface ReminderAction extends BaseAction {
+export interface ReminderAction extends BaseEditableAction {
   title: string;
-  dueDate: string;
+  dueDate: string; // YYYY-MM-DD
   dueTime?: string;
   priority: 'low' | 'medium' | 'high';
   status: 'pending' | 'completed';
 }
 
-export interface NextStepAction extends BaseAction {
+export interface NextStepAction extends BaseEditableAction {
   title: string;
   status: 'pending' | 'completed';
 }
+
+export type EditableAction = CalendarAction | EmailAction | ReminderAction | NextStepAction;
 
 export interface NoteActions {
   calendar: CalendarAction[];
   email: EmailAction[];
   reminders: ReminderAction[];
-  nextSteps: string[];  // Keep as string[] for backwards compatibility
+  nextSteps: string[];
 }
 
-// Editable action type union for the action bar
-export type EditableAction = CalendarAction | EmailAction | ReminderAction | NextStepAction;
+export type NoteSyncStatus = 'synced' | 'pending' | 'conflict' | 'error';
 
 export interface Note {
   id: string;
   title: string;
-  timestamp: string;
+  timestamp: string; // ISO string
   transcript: string;
-  duration: number; // in seconds
+  duration: number; // seconds
   actions: NoteActions;
-  folderId: string;
+  folderId?: string;
   tags: string[];
   isPinned?: boolean;
-  sync_status?: 'synced' | 'pending' | 'conflict' | 'error';
+
+  // Offline-first UI needs these for status badges and edge cases.
+  sync_status?: NoteSyncStatus;
+  ai_processed?: boolean;
 }
 
 export interface Folder {
   id: string;
   name: string;
-  icon: string; // SF Symbol name
-  noteCount?: number; // Made optional for DBFolder compatibility
+  icon: string;
+  noteCount?: number;
   color?: string;
-  isSystem?: boolean; // For "All iCloud", "Notes", "Recently Deleted"
+  isSystem: boolean;
   sortOrder: number;
   parentId?: string | null;
   depth: number;
   children?: Folder[];
 }
 
-export interface NotesState {
-  notes: Note[];
-  folders: Folder[];
-  selectedFolderId: string | null;
-  selectedNoteId: string | null;
-  isRecording: boolean;
-  searchQuery: string;
-}
-
-export type ActionType = 'calendar' | 'email' | 'reminder';
-
-export interface ActionBadgeData {
-  type: ActionType;
-  count: number;
-}

@@ -28,6 +28,7 @@ from app.utils.auth import (
     create_refresh_token,
     verify_token,
 )
+from app.utils.supabase_auth import verify_supabase_jwt
 from app.utils.apple import verify_apple_identity_token
 from app.config import get_settings
 from app.core.errors import (
@@ -68,24 +69,94 @@ async def get_current_user(
     db: AsyncSession = Depends(get_db)
 ) -> User:
     """Get current authenticated user from JWT token."""
-    payload = verify_token(token, token_type="access")
-    if payload is None:
-        raise AuthenticationError(
-            message="Invalid or expired access token",
-            code=ErrorCode.AUTH_INVALID_TOKEN,
-        )
+    user = None
+    # Try Supabase JWT first if configured
+    if settings.supabase_url:
+        try:
+            payload = await verify_supabase_jwt(token)
+            supabase_user_id = payload.get("sub")
+            email = payload.get("email")
+            app_metadata = payload.get("app_metadata") or {}
+            provider = app_metadata.get("provider")
+            providers = app_metadata.get("providers") or []
+            providers_set = set([provider] + providers if provider else providers)
 
-    user_id = payload.get("sub")
-    if user_id is None:
-        raise AuthenticationError(
-            message="Invalid token payload",
-            code=ErrorCode.AUTH_INVALID_TOKEN,
-        )
+            if not supabase_user_id:
+                raise AuthenticationError(
+                    message="Invalid Supabase token payload",
+                    code=ErrorCode.AUTH_INVALID_TOKEN,
+                )
 
-    result = await db.execute(
-        select(User).where(User.id == UUID(user_id))
-    )
-    user = result.scalar_one_or_none()
+            result = await db.execute(
+                select(User).where(User.supabase_user_id == UUID(supabase_user_id))
+            )
+            user = result.scalar_one_or_none()
+
+            if user is None:
+                if not email:
+                    raise AuthenticationError(
+                        message="Supabase token missing email",
+                        code=ErrorCode.AUTH_INVALID_TOKEN,
+                    )
+
+                full_name = None
+                user_metadata = payload.get("user_metadata") or {}
+                full_name = user_metadata.get("full_name") or user_metadata.get("name")
+
+                user = User(
+                    email=email,
+                    full_name=full_name,
+                    is_verified=bool(payload.get("email_verified", False)),
+                    supabase_user_id=UUID(supabase_user_id),
+                    auth_apple="apple" in providers_set,
+                    auth_google="google" in providers_set,
+                    auth_microsoft=("azure" in providers_set) or ("microsoft" in providers_set),
+                )
+                db.add(user)
+                await db.commit()
+                await db.refresh(user)
+            else:
+                # Keep provider flags in sync if the user authenticates with a new provider
+                updated = False
+                if "apple" in providers_set and not user.auth_apple:
+                    user.auth_apple = True
+                    updated = True
+                if "google" in providers_set and not user.auth_google:
+                    user.auth_google = True
+                    updated = True
+                if ("azure" in providers_set or "microsoft" in providers_set) and not user.auth_microsoft:
+                    user.auth_microsoft = True
+                    updated = True
+                if updated:
+                    await db.commit()
+
+        except JWTError:
+            if not settings.allow_legacy_jwt:
+                raise AuthenticationError(
+                    message="Invalid or expired access token",
+                    code=ErrorCode.AUTH_INVALID_TOKEN,
+                )
+
+    # Legacy JWT fallback (temporary during migration)
+    if user is None:
+        payload = verify_token(token, token_type="access")
+        if payload is None:
+            raise AuthenticationError(
+                message="Invalid or expired access token",
+                code=ErrorCode.AUTH_INVALID_TOKEN,
+            )
+
+        user_id = payload.get("sub")
+        if user_id is None:
+            raise AuthenticationError(
+                message="Invalid token payload",
+                code=ErrorCode.AUTH_INVALID_TOKEN,
+            )
+
+        result = await db.execute(
+            select(User).where(User.id == UUID(user_id))
+        )
+        user = result.scalar_one_or_none()
 
     if user is None:
         raise AuthenticationError(

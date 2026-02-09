@@ -1,63 +1,19 @@
-import { Folder } from './types';
+import type { Folder } from './types';
 
+// Minimal folder set for unauthenticated / demo mode screens.
+// When authenticated, folders should come from the API via NotesContext.
 export const mockFolders: Folder[] = [
   {
     id: 'all-icloud',
-    name: 'All iCloud',
-    icon: 'folder.fill',
-    noteCount: 24,
+    name: 'All Notes',
+    icon: 'folder',
+    noteCount: 0,
+    color: undefined,
     isSystem: true,
     sortOrder: 0,
+    parentId: null,
     depth: 0,
-  },
-  {
-    id: 'notes',
-    name: 'Notes',
-    icon: 'folder.fill',
-    noteCount: 18,
-    isSystem: true,
-    sortOrder: 1,
-    depth: 0,
-  },
-  {
-    id: 'work',
-    name: 'Work',
-    icon: 'folder.fill',
-    noteCount: 8,
-    sortOrder: 2,
-    depth: 0,
-  },
-  {
-    id: 'personal',
-    name: 'Personal',
-    icon: 'folder.fill',
-    noteCount: 6,
-    sortOrder: 3,
-    depth: 0,
-  },
-  {
-    id: 'ideas',
-    name: 'Ideas',
-    icon: 'lightbulb.fill',
-    noteCount: 4,
-    sortOrder: 4,
-    depth: 0,
-  },
-  {
-    id: 'meetings',
-    name: 'Meeting Notes',
-    icon: 'person.2.fill',
-    noteCount: 12,
-    sortOrder: 5,
-    depth: 0,
-  },
-  {
-    id: 'recently-deleted',
-    name: 'Recently Deleted',
-    icon: 'trash.fill',
-    noteCount: 2,
-    isSystem: true,
-    sortOrder: 6,
-    depth: 0,
+    children: [],
   },
 ];
+

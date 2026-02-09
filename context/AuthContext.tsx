@@ -4,13 +4,15 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { authService, User } from '@/services/auth';
 import { notesService } from '@/services/notes';
-import api from '@/services/api';
-import { RateLimitStatus } from '@/utils/rateLimit';
+import { supabase, setupSupabaseAutoRefresh } from '@/lib/supabase';
+import * as AuthSession from 'expo-auth-session';
+import * as WebBrowser from 'expo-web-browser';
 
 // Navigation persistence key (must match useNavigationPersistence)
 const NAVIGATION_STATE_KEY = 'glide_last_route';
+
+WebBrowser.maybeCompleteAuthSession();
 
 // DEV MODE: Auto-login with test credentials for faster development
 // This bypasses the login screen during development to speed up testing
@@ -23,13 +25,21 @@ const DEV_AUTO_LOGIN = process.env.EXPO_PUBLIC_DEV_AUTO_LOGIN === 'true';
 const DEV_TEST_EMAIL = process.env.EXPO_PUBLIC_DEV_TEST_EMAIL || 'devtest@glide.app';
 const DEV_TEST_PASSWORD = process.env.EXPO_PUBLIC_DEV_TEST_PASSWORD || 'test123';
 
+export interface AuthUser {
+  id: string;
+  email: string | null;
+  full_name?: string | null;
+}
+
 interface AuthContextType {
-  user: User | null;
+  user: AuthUser | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string; rateLimitStatus?: RateLimitStatus }>;
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   register: (email: string, password: string, fullName?: string) => Promise<{ success: boolean; error?: string }>;
-  signInWithApple: () => Promise<{ success: boolean; error?: string }>;
+  signInWithProvider: (provider: 'apple' | 'google' | 'azure') => Promise<{ success: boolean; error?: string }>;
+  resetPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
+  devLogin: () => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -37,69 +47,56 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    checkAuth();
+    let cleanup: (() => void) | null = null;
+    checkAuth().then((autoRefreshCleanup) => {
+      cleanup = autoRefreshCleanup ?? null;
+    });
+    return () => {
+      if (cleanup) cleanup();
+    };
   }, []);
 
-  const checkAuth = async () => {
+  const checkAuth = async (): Promise<(() => void) | null> => {
     try {
-      // Ensure tokens are loaded from SecureStore before checking auth
-      await api.ensureTokensLoaded();
-
-      if (api.isAuthenticated()) {
-        console.log('[AUTH] Found existing token, fetching user...');
-        const { user: userData, error: userError } = await authService.getCurrentUser();
-        if (userData) {
-          setUser(userData);
-          console.log('[AUTH] Restored session for:', userData.email);
-          // Ensure default folders exist
-          try {
-            await notesService.setupDefaultFolders();
-          } catch (e) {
-            // Ignore - folders may already exist
-          }
-        } else {
-          console.log('[AUTH] Token exists but failed to get user:', userError);
-          // Token might be expired/invalid - clear it
-          await api.clearTokens();
-        }
-      } else if (DEV_AUTO_LOGIN) {
-        // DEV MODE: Auto-login with test credentials
-        console.log('[DEV] No existing tokens, auto-logging in with test credentials...');
-        console.log('[DEV] Attempting login for:', DEV_TEST_EMAIL);
-
-        const result = await authService.login({
-          email: DEV_TEST_EMAIL,
-          password: DEV_TEST_PASSWORD
+      const { data } = await supabase.auth.getSession();
+      const sessionUser = data.session?.user ?? null;
+      if (sessionUser) {
+        setUser({
+          id: sessionUser.id,
+          email: sessionUser.email ?? null,
+          full_name: sessionUser.user_metadata?.full_name ?? null,
         });
-
-        console.log('[DEV] Login result:', result.success ? 'SUCCESS' : 'FAILED');
-
-        if (result.success) {
-          const { user: userData, error: userError } = await authService.getCurrentUser();
-          if (userData) {
-            setUser(userData);
-            console.log('[DEV] Auto-login successful, user:', userData.email);
-            try {
-              await notesService.setupDefaultFolders();
-            } catch (e) {
-              // Ignore - folders may already exist
-            }
-          } else {
-            console.log('[DEV] Failed to get user after login:', userError);
-          }
-        } else {
+        await setupUserDefaults();
+      } else if (DEV_AUTO_LOGIN) {
+        const result = await login(DEV_TEST_EMAIL, DEV_TEST_PASSWORD);
+        if (!result.success) {
           console.log('[DEV] Auto-login failed:', result.error);
-          console.log('[DEV] Make sure test user exists: email=' + DEV_TEST_EMAIL);
         }
-      } else {
-        console.log('[AUTH] No tokens and DEV_AUTO_LOGIN is disabled');
       }
+
+      const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+        const nextUser = session?.user
+          ? {
+            id: session.user.id,
+            email: session.user.email ?? null,
+            full_name: session.user.user_metadata?.full_name ?? null,
+          }
+          : null;
+        setUser(nextUser);
+      });
+
+      const autoRefreshCleanup = setupSupabaseAutoRefresh();
+      return () => {
+        listener.subscription.unsubscribe();
+        autoRefreshCleanup();
+      };
     } catch (error) {
       console.error('Auth check failed:', error);
+      return null;
     } finally {
       setIsLoading(false);
     }
@@ -115,19 +112,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const login = async (email: string, password: string) => {
-    const result = await authService.login({ email, password });
-    if (result.success) {
-      const { user: userData } = await authService.getCurrentUser();
-      if (userData) setUser(userData);
-      await setupUserDefaults();
-    }
-    return result;
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) return { success: false, error: error.message };
+    await setupUserDefaults();
+    return { success: true };
   };
 
   const register = async (email: string, password: string, fullName?: string) => {
-    const { error } = await authService.register({ email, password, full_name: fullName });
-    if (error) return { success: false, error };
-    return await login(email, password);
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { full_name: fullName } },
+    });
+    if (error) return { success: false, error: error.message };
+    await setupUserDefaults();
+    return { success: true };
   };
 
   const logout = async () => {
@@ -137,27 +136,64 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.warn('Failed to clear navigation state on logout:', error);
     }
-    await authService.logout();
+    await supabase.auth.signOut();
     setUser(null);
   };
 
-  const signInWithApple = async () => {
-    const result = await authService.signInWithApple();
-    if (result.success) {
-      const { user: userData } = await authService.getCurrentUser();
-      if (userData) setUser(userData);
-      await setupUserDefaults();
+  const signInWithProvider = async (provider: 'apple' | 'google' | 'azure') => {
+    const redirectTo = AuthSession.makeRedirectUri({ scheme: 'glide', path: 'auth-callback' });
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: {
+        redirectTo,
+        skipBrowserRedirect: true,
+      },
+    });
+    if (error) return { success: false, error: error.message };
+    if (!data?.url) return { success: false, error: 'No auth URL returned' };
+
+    const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+    if (result.type !== 'success' || !result.url) {
+      return { success: false, error: 'Sign-in cancelled' };
     }
-    return result;
+
+    const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(result.url);
+    if (exchangeError) return { success: false, error: exchangeError.message };
+
+    await setupUserDefaults();
+    return { success: true };
+  };
+
+  const resetPassword = async (email: string) => {
+    const redirectTo = AuthSession.makeRedirectUri({ scheme: 'glide' });
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+    if (error) return { success: false, error: error.message };
+    return { success: true };
   };
 
   const refreshUser = async () => {
-    const { user: userData } = await authService.getCurrentUser();
-    if (userData) setUser(userData);
+    const { data, error } = await supabase.auth.getUser();
+    if (error) return;
+    if (data.user) {
+      setUser({
+        id: data.user.id,
+        email: data.user.email ?? null,
+        full_name: data.user.user_metadata?.full_name ?? null,
+      });
+    }
+  };
+
+  const devLogin = async () => {
+    const email = DEV_TEST_EMAIL;
+    const password = DEV_TEST_PASSWORD;
+    if (!email || !password) {
+      return { success: false, error: 'Missing dev credentials' };
+    }
+    return await login(email, password);
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, isAuthenticated: !!user, login, register, signInWithApple, logout, refreshUser }}>
+    <AuthContext.Provider value={{ user, isLoading, isAuthenticated: !!user, login, register, signInWithProvider, resetPassword, devLogin, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

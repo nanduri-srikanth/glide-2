@@ -10,12 +10,18 @@ from app.config import get_settings
 settings = get_settings()
 
 # Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Prefer bcrypt_sha256 to avoid bcrypt's 72-byte password limit.
+# Keep bcrypt to verify legacy hashes.
+pwd_context = CryptContext(schemes=["bcrypt_sha256", "bcrypt"], deprecated="auto")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against a hash."""
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return pwd_context.verify(plain_password, hashed_password)
+    except ValueError:
+        # Handle bcrypt 72-byte limitation gracefully
+        return False
 
 
 def get_password_hash(password: str) -> str:

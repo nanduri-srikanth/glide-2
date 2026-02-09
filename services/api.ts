@@ -2,9 +2,9 @@
  * API Service - Core HTTP client for backend communication
  */
 
-import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
+import { getSupabaseAccessToken } from '@/lib/supabase';
 
 // API Configuration - automatically detects the correct host
 const getDevHost = () => {
@@ -34,10 +34,6 @@ export const API_BASE_URL = __DEV__
 // Debug: Log the API URL on startup
 console.log('[API] Base URL:', API_BASE_URL);
 
-// Token storage keys
-const ACCESS_TOKEN_KEY = 'glide_access_token';
-const REFRESH_TOKEN_KEY = 'glide_refresh_token';
-
 // Types
 export interface ApiError {
   status: number;
@@ -51,90 +47,18 @@ export interface ApiResponse<T> {
 }
 
 class ApiService {
-  private accessToken: string | null = null;
-  private refreshToken: string | null = null;
-  private refreshPromise: Promise<boolean> | null = null;
-  private tokensLoadedPromise: Promise<void>;
-
-  constructor() {
-    this.tokensLoadedPromise = this.loadTokens();
-  }
-
-  private async loadTokens(): Promise<void> {
-    try {
-      this.accessToken = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
-      this.refreshToken = await SecureStore.getItemAsync(REFRESH_TOKEN_KEY);
-    } catch (error) {
-      console.error('Failed to load tokens:', error);
-    }
-  }
-
   async ensureTokensLoaded(): Promise<void> {
-    await this.tokensLoadedPromise;
-  }
-
-  async saveTokens(accessToken: string, refreshToken: string): Promise<void> {
-    this.accessToken = accessToken;
-    this.refreshToken = refreshToken;
-    await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, accessToken);
-    await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, refreshToken);
-  }
-
-  async clearTokens(): Promise<void> {
-    this.accessToken = null;
-    this.refreshToken = null;
-    await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY);
-    await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
-  }
-
-  isAuthenticated(): boolean {
-    return !!this.accessToken;
-  }
-
-  getAccessToken(): string | null {
-    return this.accessToken;
-  }
-
-  private async refreshAccessToken(): Promise<boolean> {
-    if (!this.refreshToken) return false;
-
-    if (this.refreshPromise) {
-      return this.refreshPromise;
-    }
-
-    this.refreshPromise = (async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refresh_token: this.refreshToken }),
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          await this.saveTokens(data.access_token, data.refresh_token);
-          return true;
-        }
-        await this.clearTokens();
-        return false;
-      } catch (error) {
-        await this.clearTokens();
-        return false;
-      } finally {
-        this.refreshPromise = null;
-      }
-    })();
-
-    return this.refreshPromise;
+    // Supabase SDK manages session persistence; nothing to load here.
+    return;
   }
 
   async request<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
-    await this.tokensLoadedPromise;
     const url = `${API_BASE_URL}${endpoint}`;
     const headers: HeadersInit = { ...options.headers };
 
-    if (this.accessToken) {
-      (headers as Record<string, string>)['Authorization'] = `Bearer ${this.accessToken}`;
+    const accessToken = await getSupabaseAccessToken();
+    if (accessToken) {
+      (headers as Record<string, string>)['Authorization'] = `Bearer ${accessToken}`;
     }
 
     if (options.body && typeof options.body === 'string') {
@@ -142,15 +66,7 @@ class ApiService {
     }
 
     try {
-      let response = await fetch(url, { ...options, headers });
-
-      if (response.status === 401 && this.refreshToken) {
-        const refreshed = await this.refreshAccessToken();
-        if (refreshed) {
-          (headers as Record<string, string>)['Authorization'] = `Bearer ${this.accessToken}`;
-          response = await fetch(url, { ...options, headers });
-        }
-      }
+      const response = await fetch(url, { ...options, headers });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -209,24 +125,13 @@ class ApiService {
   }
 
   async postFormData<T>(endpoint: string, formData: FormData): Promise<ApiResponse<T>> {
-    await this.tokensLoadedPromise;
     const url = `${API_BASE_URL}${endpoint}`;
     const headers: Record<string, string> = {};
-    if (this.accessToken) {
-      headers['Authorization'] = `Bearer ${this.accessToken}`;
-    }
+    const accessToken = await getSupabaseAccessToken();
+    if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
 
     try {
-      let response = await fetch(url, { method: 'POST', headers, body: formData });
-
-      // Handle 401 with token refresh
-      if (response.status === 401 && this.refreshToken) {
-        const refreshed = await this.refreshAccessToken();
-        if (refreshed) {
-          headers['Authorization'] = `Bearer ${this.accessToken}`;
-          response = await fetch(url, { method: 'POST', headers, body: formData });
-        }
-      }
+      const response = await fetch(url, { method: 'POST', headers, body: formData });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));

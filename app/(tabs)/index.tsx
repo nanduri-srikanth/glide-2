@@ -11,7 +11,6 @@ import { UnifiedSearchOverlay } from '@/components/notes/UnifiedSearchOverlay';
 import { useNotes } from '@/context/NotesContext';
 import { useAuth } from '@/context/AuthContext';
 import { Folder } from '@/data/types';
-import { mockFolders } from '@/data/mockFolders';
 import { notesService } from '@/services/notes';
 
 export default function FoldersScreen() {
@@ -54,7 +53,6 @@ export default function FoldersScreen() {
   }), []);
 
   // Convert API folders to display format with tree structure
-  // Only show mock folders when NOT authenticated
   const displayFolders: Folder[] = useMemo(() => {
     if (isAuthenticated) {
       // When authenticated, always use API folders (even if empty)
@@ -63,13 +61,7 @@ export default function FoldersScreen() {
       }
       return []; // Return empty array while loading or if no folders
     }
-    // Mock folders only for unauthenticated state
-    return mockFolders.map(f => ({
-      ...f,
-      sortOrder: f.sortOrder || 0,
-      depth: f.depth || 0,
-      children: [],
-    }));
+    return [];
   }, [isAuthenticated, folders, buildFlattenedTree]);
 
   // Get folders for display (no longer filtered inline - handled by overlay)
@@ -77,13 +69,7 @@ export default function FoldersScreen() {
     if (isAuthenticated) {
       return folders.map(convertFolder);
     }
-    // Mock folders for unauthenticated
-    return mockFolders.map(f => ({
-      ...f,
-      sortOrder: f.sortOrder || 0,
-      depth: f.depth || 0,
-      children: [],
-    }));
+    return [];
   }, [isAuthenticated, folders, convertFolder]);
 
   const handleFolderPress = useCallback((folder: Folder) => {
@@ -145,17 +131,34 @@ export default function FoldersScreen() {
   };
 
   const handleAuthPress = () => {
+    if (!isAuthenticated) {
+      router.push('/auth');
+    }
+  };
+
+  const handleMenuPress = () => {
     if (isAuthenticated) {
       Alert.alert(
         'Account',
         `Signed in as ${user?.email || 'User'}`,
         [
+          { text: 'Account & Settings', onPress: () => router.push('/settings') },
+          {
+            text: 'Sign Out',
+            style: 'destructive',
+            onPress: async () => {
+              await logout();
+              router.replace('/auth');
+            },
+          },
           { text: 'Cancel', style: 'cancel' },
-          { text: 'Sign Out', style: 'destructive', onPress: () => logout() },
         ]
       );
     } else {
-      router.push('/auth');
+      Alert.alert('Account', 'Not signed in', [
+        { text: 'Sign In', onPress: () => router.push('/auth') },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
     }
   };
 
@@ -216,13 +219,6 @@ export default function FoldersScreen() {
         <View style={styles.titleContainer}>
           <Text style={styles.title}>Folders</Text>
           <View style={styles.headerButtons}>
-            <TouchableOpacity style={styles.iconButton} onPress={handleAuthPress}>
-              <Ionicons
-                name={isAuthenticated ? 'person-circle' : 'person-circle-outline'}
-                size={28}
-                color={isAuthenticated ? NotesColors.primary : NotesColors.textSecondary}
-              />
-            </TouchableOpacity>
             <TouchableOpacity style={styles.iconButton} onPress={handleAddFolder}>
               <View style={styles.addFolderIcon}>
                 <Ionicons name="folder-outline" size={24} color={NotesColors.primary} />
@@ -231,10 +227,12 @@ export default function FoldersScreen() {
                 </View>
               </View>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.editButton} onPress={toggleEditMode}>
-              <Text style={isEditMode ? styles.doneText : styles.editText}>
-                {isEditMode ? 'Done' : 'Edit'}
-              </Text>
+            <TouchableOpacity style={styles.iconButton} onPress={handleMenuPress}>
+              <Ionicons
+                name="ellipsis-vertical"
+                size={22}
+                color={NotesColors.textSecondary}
+              />
             </TouchableOpacity>
           </View>
         </View>
@@ -325,9 +323,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  editButton: { padding: 4 },
-  editText: { fontSize: 17, color: NotesColors.primary },
-  doneText: { fontSize: 17, fontWeight: '600', color: NotesColors.primary },
   header: { marginBottom: 8 },
   signInBanner: {
     flexDirection: 'row',

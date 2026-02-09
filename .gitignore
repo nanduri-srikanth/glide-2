@@ -49,6 +49,8 @@ env/
 ENV/
 backend/venv/
 backend/.venv/
+backend/.venv*/
+backend/test.db
 
 # Environment files - NEVER commit these
 .env

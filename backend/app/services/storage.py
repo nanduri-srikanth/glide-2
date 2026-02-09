@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import BinaryIO
 
 from app.config import get_settings
+from app.core.errors import ExternalServiceError
 
 
 class StorageService:
@@ -67,23 +68,35 @@ class StorageService:
 
     async def _upload_supabase(self, file: BinaryIO, key: str, content_type: str) -> dict:
         """Upload to Supabase Storage."""
+        if not self.supabase_url or not self.service_role_key:
+            raise ExternalServiceError(
+                service="storage",
+                message="Supabase Storage is not configured (missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY).",
+            )
+
         url = f"{self.supabase_url}/storage/v1/object/{self.bucket_name}/{key}"
 
         file_content = file.read()
 
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                url,
-                content=file_content,
-                headers={
-                    "Authorization": f"Bearer {self.service_role_key}",
-                    "Content-Type": content_type,
-                    "x-upsert": "true",  # Overwrite if exists
-                }
-            )
+            try:
+                response = await client.post(
+                    url,
+                    content=file_content,
+                    headers={
+                        "Authorization": f"Bearer {self.service_role_key}",
+                        "Content-Type": content_type,
+                        "x-upsert": "true",  # Overwrite if exists
+                    },
+                )
+            except httpx.HTTPError as e:
+                raise ExternalServiceError(service="storage", message=f"Failed to upload audio: {e}") from e
 
             if response.status_code not in (200, 201):
-                raise Exception(f"Failed to upload file: {response.text}")
+                raise ExternalServiceError(
+                    service="storage",
+                    message=f"Failed to upload audio (HTTP {response.status_code}): {response.text}",
+                )
 
         # Generate public URL
         public_url = f"{self.supabase_url}/storage/v1/object/public/{self.bucket_name}/{key}"
@@ -104,20 +117,32 @@ class StorageService:
             file_path = os.path.join(self.local_path, key)
             return f"file://{file_path}"
 
+        if not self.supabase_url or not self.service_role_key:
+            raise ExternalServiceError(
+                service="storage",
+                message="Supabase Storage is not configured (missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY).",
+            )
+
         url = f"{self.supabase_url}/storage/v1/object/sign/{self.bucket_name}/{key}"
 
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                url,
-                json={"expiresIn": expires_in},
-                headers={
-                    "Authorization": f"Bearer {self.service_role_key}",
-                    "Content-Type": "application/json",
-                }
-            )
+            try:
+                response = await client.post(
+                    url,
+                    json={"expiresIn": expires_in},
+                    headers={
+                        "Authorization": f"Bearer {self.service_role_key}",
+                        "Content-Type": "application/json",
+                    },
+                )
+            except httpx.HTTPError as e:
+                raise ExternalServiceError(service="storage", message=f"Failed to sign audio URL: {e}") from e
 
             if response.status_code != 200:
-                raise Exception(f"Failed to generate signed URL: {response.text}")
+                raise ExternalServiceError(
+                    service="storage",
+                    message=f"Failed to generate signed URL (HTTP {response.status_code}): {response.text}",
+                )
 
             data = response.json()
             return f"{self.supabase_url}/storage/v1{data['signedURL']}"
@@ -138,15 +163,24 @@ class StorageService:
                 os.remove(file_path)
             return True
 
+        if not self.supabase_url or not self.service_role_key:
+            raise ExternalServiceError(
+                service="storage",
+                message="Supabase Storage is not configured (missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY).",
+            )
+
         url = f"{self.supabase_url}/storage/v1/object/{self.bucket_name}/{key}"
 
         async with httpx.AsyncClient() as client:
-            response = await client.delete(
-                url,
-                headers={
-                    "Authorization": f"Bearer {self.service_role_key}",
-                }
-            )
+            try:
+                response = await client.delete(
+                    url,
+                    headers={
+                        "Authorization": f"Bearer {self.service_role_key}",
+                    },
+                )
+            except httpx.HTTPError:
+                return False
             return response.status_code in (200, 204, 404)
 
     async def get_upload_url(

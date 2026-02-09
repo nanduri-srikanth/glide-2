@@ -1,5 +1,6 @@
 """Application configuration using Pydantic Settings."""
 from functools import lru_cache
+from pathlib import Path
 from typing import List
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -7,8 +8,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
+    _ENV_FILE = str(Path(__file__).resolve().parents[1] / ".env")
+
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # Resolve relative to backend/ so running uvicorn from repo root still works.
+        env_file=_ENV_FILE,
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -24,6 +28,8 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_anon_key: str = ""
     supabase_service_role_key: str = ""  # For server-side storage access
+    supabase_jwt_audience: str = ""  # Optional, default "authenticated" if set in Supabase
+    allow_legacy_jwt: bool = True  # Temporary fallback during migration
 
     # Database
     database_url: str = ""

@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Optional
 
 from app.config import get_settings
+from app.core.errors import ExternalServiceError
 from app.schemas.voice_schemas import ActionExtractionResult
 
 
@@ -252,11 +253,15 @@ Rules:
 9. Capture open loops separately - don't create reminders for unresolved questions
 10. Return ONLY the JSON object, nothing else"""
 
-        response = self.client.chat.completions.create(
-            model=self.MODEL,
-            max_tokens=2000,
-            messages=[{"role": "user", "content": prompt}]
-        )
+        try:
+            response = self.client.chat.completions.create(
+                model=self.MODEL,
+                max_tokens=2000,
+                response_format={"type": "json_object"},
+                messages=[{"role": "user", "content": prompt}],
+            )
+        except Exception as e:
+            raise ExternalServiceError(service="llm", message=f"Groq LLM request failed: {e}") from e
 
         # Parse JSON response
         response_text = response.choices[0].message.content.strip()
@@ -442,11 +447,15 @@ Rules:
 7. Only add new tags that are relevant to the new content
 8. Return ONLY the JSON object, nothing else"""
 
-        response = self.client.chat.completions.create(
-            model=self.MODEL,
-            max_tokens=2000,
-            messages=[{"role": "user", "content": prompt}]
-        )
+        try:
+            response = self.client.chat.completions.create(
+                model=self.MODEL,
+                max_tokens=2000,
+                response_format={"type": "json_object"},
+                messages=[{"role": "user", "content": prompt}],
+            )
+        except Exception as e:
+            raise ExternalServiceError(service="llm", message=f"Groq LLM request failed: {e}") from e
 
         # Parse JSON response
         response_text = response.choices[0].message.content.strip()
@@ -522,11 +531,15 @@ Return JSON with:
 
 Return ONLY valid JSON."""
 
-        response = self.client.chat.completions.create(
-            model=self.MODEL,
-            max_tokens=1000,
-            messages=[{"role": "user", "content": prompt}]
-        )
+        try:
+            response = self.client.chat.completions.create(
+                model=self.MODEL,
+                max_tokens=1000,
+                response_format={"type": "json_object"},
+                messages=[{"role": "user", "content": prompt}],
+            )
+        except Exception as e:
+            raise ExternalServiceError(service="llm", message=f"Groq LLM request failed: {e}") from e
 
         response_text = response.choices[0].message.content.strip()
         if response_text.startswith("```"):
@@ -753,11 +766,15 @@ Rules:
 6. Capture open loops separately from actions
 7. Return ONLY the JSON object, nothing else"""
 
-        response = self.client.chat.completions.create(
-            model=self.MODEL,
-            max_tokens=3000,
-            messages=[{"role": "user", "content": prompt}]
-        )
+        try:
+            response = self.client.chat.completions.create(
+                model=self.MODEL,
+                max_tokens=3000,
+                response_format={"type": "json_object"},
+                messages=[{"role": "user", "content": prompt}],
+            )
+        except Exception as e:
+            raise ExternalServiceError(service="llm", message=f"Groq LLM request failed: {e}") from e
 
         # Parse JSON response
         response_text = response.choices[0].message.content.strip()
@@ -952,11 +969,15 @@ Return ONLY valid JSON:
   ]
 }}"""
 
-        response = self.client.chat.completions.create(
-            model=self.MODEL,
-            max_tokens=2000,
-            messages=[{"role": "user", "content": prompt}]
-        )
+        try:
+            response = self.client.chat.completions.create(
+                model=self.MODEL,
+                max_tokens=2000,
+                response_format={"type": "json_object"},
+                messages=[{"role": "user", "content": prompt}],
+            )
+        except Exception as e:
+            raise ExternalServiceError(service="llm", message=f"Groq LLM request failed: {e}") from e
 
         response_text = response.choices[0].message.content.strip()
 
@@ -1205,11 +1226,15 @@ CRITICAL: The narrative should be COMPREHENSIVE. If 5 items were discussed,
 all 5 should appear. If reasoning was given, include the reasoning.
 DO NOT summarize away important details."""
 
-        response = self.client.chat.completions.create(
-            model=self.MODEL,
-            max_tokens=4000,  # Higher limit for comprehensive output
-            messages=[{"role": "user", "content": prompt}]
-        )
+        try:
+            response = self.client.chat.completions.create(
+                model=self.MODEL,
+                max_tokens=4000,  # Higher limit for comprehensive output
+                response_format={"type": "json_object"},
+                messages=[{"role": "user", "content": prompt}],
+            )
+        except Exception as e:
+            raise ExternalServiceError(service="llm", message=f"Groq LLM request failed: {e}") from e
 
         response_text = response.choices[0].message.content.strip()
 
@@ -1413,11 +1438,15 @@ IMPORTANT:
 - Always return the COMPLETE narrative, not just changes
 - Only extract Calendar, Email, and Reminder actions - nothing else"""
 
-        response = self.client.chat.completions.create(
-            model=self.MODEL,
-            max_tokens=4000,
-            messages=[{"role": "user", "content": prompt}]
-        )
+        try:
+            response = self.client.chat.completions.create(
+                model=self.MODEL,
+                max_tokens=4000,
+                response_format={"type": "json_object"},
+                messages=[{"role": "user", "content": prompt}],
+            )
+        except Exception as e:
+            raise ExternalServiceError(service="llm", message=f"Groq LLM request failed: {e}") from e
 
         response_text = response.choices[0].message.content.strip()
 
