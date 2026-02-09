@@ -583,6 +583,9 @@ export default function NoteDetailScreen() {
     // Add the audio content to the note
     const success = await addContent({ audioUri });
     if (success) {
+      // Invalidate stale RTF so editor re-renders from updated markdown
+      setRichRtfBase64(undefined);
+      setRichEditorKey(prev => prev + 1);
       Alert.alert('Success', 'Recording added to note.');
     } else {
       Alert.alert('Error', 'Failed to add recording. Please try again.');
@@ -597,6 +600,9 @@ export default function NoteDetailScreen() {
   }): Promise<boolean> => {
     const success = await addContent(options);
     if (success) {
+      // Invalidate stale RTF so editor re-renders from updated markdown
+      setRichRtfBase64(undefined);
+      setRichEditorKey(prev => prev + 1);
       // Reset dirty tracking since content was saved to server
       discardActionChanges();
       // Show what decision was made
@@ -709,6 +715,10 @@ export default function NoteDetailScreen() {
       });
 
       if (success) {
+        // Invalidate stale RTF so editor re-renders from updated markdown
+        setRichRtfBase64(undefined);
+        setRichEditorKey(prev => prev + 1);
+
         // Create a version snapshot locally
         try {
           await noteVersionsRepository.create({

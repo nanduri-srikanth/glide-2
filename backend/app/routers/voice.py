@@ -694,34 +694,38 @@ async def add_to_synthesis(
                 "reason": "User requested comprehensive re-synthesis"
             }
         elif resynthesize is False:
-            # Summarize new content in ISOLATION (not raw append)
-            # This creates a proper summary of just the new content
-            new_content_summary = await llm_service.summarize_new_content(
-                new_transcript=new_content,
-                existing_title=note.title,
+            # Synthesize new content through full LLM pipeline (proper formatting)
+            # Pass raw text/audio separately so synthesis can distinguish typed vs spoken
+            synthesis = await llm_service.synthesize_content(
+                text_input=text_input.strip() if text_input else "",
+                audio_transcript=audio_transcript,
                 user_context=user_context,
             )
-            timestamp_str = now.strftime("%b %d, %Y at %I:%M %p")
-            separator = f"\n\n---\n\n**Update ({timestamp_str})**\n\n"
-            summarized_content = new_content_summary.get("summary", new_content)
-            # Append the summarized content, not raw transcript
-            note.transcript = (note.transcript or "") + separator + summarized_content
-            # Update the note's summary to include the new content
-            if note.summary:
-                note.summary = note.summary + f"\n\n**Update:** {summarized_content[:500]}"
+            synthesized_narrative = synthesis.get("narrative", new_content)
+            # Clean append — just paragraph spacing, no ugly separator
+            if note.transcript:
+                note.transcript = note.transcript + "\n\n" + synthesized_narrative
             else:
-                note.summary = summarized_content
-            note.tags = list(set(note.tags or []) | set(new_content_summary.get("tags", [])))[:10]
+                note.transcript = synthesized_narrative
+            # Preserve existing title — don't replace with synthesis title
+            # Merge tags
+            note.tags = list(set(note.tags or []) | set(synthesis.get("tags", [])))[:10]
+            # Update summary
+            new_summary = synthesis.get("summary")
+            if note.summary and new_summary:
+                note.summary = note.summary + "\n\n" + new_summary
+            elif new_summary:
+                note.summary = new_summary
             new_actions = {
-                "calendar": new_content_summary.get("calendar", []),
-                "email": new_content_summary.get("email", []),
-                "reminders": new_content_summary.get("reminders", []),
+                "calendar": synthesis.get("calendar", []),
+                "email": synthesis.get("email", []),
+                "reminders": synthesis.get("reminders", []),
                 "next_steps": [],
             }
             decision_info = {
                 "update_type": "append",
                 "confidence": 1.0,
-                "reason": "New content summarized and appended in isolation"
+                "reason": "New content synthesized and appended"
             }
         elif auto_decide:
             # Use smart synthesis to decide
@@ -746,32 +750,33 @@ async def add_to_synthesis(
 
             new_actions = synthesis
         else:
-            # Default: summarize new content in isolation and append
-            new_content_summary = await llm_service.summarize_new_content(
-                new_transcript=new_content,
-                existing_title=note.title,
+            # Default: synthesize new content through full LLM pipeline and append
+            synthesis = await llm_service.synthesize_content(
+                text_input=text_input.strip() if text_input else "",
+                audio_transcript=audio_transcript,
                 user_context=user_context,
             )
-            timestamp_str = now.strftime("%b %d, %Y at %I:%M %p")
-            separator = f"\n\n---\n\n**Update ({timestamp_str})**\n\n"
-            summarized_content = new_content_summary.get("summary", new_content)
-            note.transcript = (note.transcript or "") + separator + summarized_content
-            # Update the note's summary to include the new content
-            if note.summary:
-                note.summary = note.summary + f"\n\n**Update:** {summarized_content[:500]}"
+            synthesized_narrative = synthesis.get("narrative", new_content)
+            if note.transcript:
+                note.transcript = note.transcript + "\n\n" + synthesized_narrative
             else:
-                note.summary = summarized_content
-            note.tags = list(set(note.tags or []) | set(new_content_summary.get("tags", [])))[:10]
+                note.transcript = synthesized_narrative
+            note.tags = list(set(note.tags or []) | set(synthesis.get("tags", [])))[:10]
+            new_summary = synthesis.get("summary")
+            if note.summary and new_summary:
+                note.summary = note.summary + "\n\n" + new_summary
+            elif new_summary:
+                note.summary = new_summary
             new_actions = {
-                "calendar": new_content_summary.get("calendar", []),
-                "email": new_content_summary.get("email", []),
-                "reminders": new_content_summary.get("reminders", []),
+                "calendar": synthesis.get("calendar", []),
+                "email": synthesis.get("email", []),
+                "reminders": synthesis.get("reminders", []),
                 "next_steps": [],
             }
             decision_info = {
                 "update_type": "append",
                 "confidence": 1.0,
-                "reason": "New content summarized and appended"
+                "reason": "New content synthesized and appended"
             }
 
         # Update note
