@@ -3,13 +3,13 @@
  */
 
 export interface DiffSegment {
-  type: 'equal' | 'added' | 'removed';
+  type: 'unchanged' | 'added' | 'removed';
   text: string;
 }
 
 /**
  * Computes a word-level diff between two strings using LCS.
- * Returns an array of segments with type 'equal', 'added', or 'removed'.
+ * Returns an array of segments with type 'unchanged', 'added', or 'removed'.
  *
  * @param oldText - The original text
  * @param newText - The updated text
@@ -41,7 +41,7 @@ export function computeWordDiff(oldText: string, newText: string): DiffSegment[]
 
   while (i > 0 || j > 0) {
     if (i > 0 && j > 0 && oldWords[i - 1] === newWords[j - 1]) {
-      raw.unshift({ type: 'equal', word: oldWords[i - 1] });
+      raw.unshift({ type: 'unchanged', word: oldWords[i - 1] });
       i--;
       j--;
     } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {

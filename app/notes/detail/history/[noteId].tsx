@@ -13,6 +13,7 @@ import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { NotesColors } from '@/constants/theme';
 import { noteVersionsRepository } from '@/lib/repositories';
+import { notesService } from '@/services/notes';
 import type { NoteVersionRow } from '@/lib/database/schema';
 
 // ---------------------------------------------------------------------------
@@ -159,9 +160,17 @@ export default function VersionHistoryScreen() {
               if (!noteId) return;
               setIsRestoring(true);
               try {
+                // 1. Update the note's actual content on the server
+                const { error } = await notesService.updateNote(noteId, {
+                  title: version.title || undefined,
+                  transcript: version.body_plain || undefined,
+                });
+                if (error) {
+                  throw new Error(error);
+                }
+
+                // 2. Create a new version entry as an audit trail
                 await noteVersionsRepository.create({
-                  id: '',          // repository generates a UUID
-                  created_at: '',  // repository fills in current ISO timestamp
                   note_id: noteId,
                   kind: 'manual',
                   actor: 'user',
@@ -173,6 +182,8 @@ export default function VersionHistoryScreen() {
                   what_removed: null,
                   parent_version_id: version.id,
                 });
+
+                // 3. Navigate back
                 router.back();
               } catch (err) {
                 console.warn('Failed to restore version', err);
@@ -373,6 +384,9 @@ export default function VersionHistoryScreen() {
         <View style={styles.emptyContainer}>
           <Ionicons name="time-outline" size={48} color={NotesColors.textSecondary} />
           <Text style={styles.emptyText}>No version history yet.</Text>
+          <Text style={styles.emptySubtext}>
+            Versions are created when you add content or re-synthesize.
+          </Text>
         </View>
       ) : (
         <SectionList
@@ -414,6 +428,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: NotesColors.textSecondary,
     textAlign: 'center',
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: NotesColors.textSecondary,
+    textAlign: 'center',
+    opacity: 0.7,
+    lineHeight: 20,
+    paddingHorizontal: 24,
   },
   listContent: {
     padding: 16,

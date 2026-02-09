@@ -27,7 +27,7 @@ class NoteVersionsRepository {
       ...input,
       id,
       created_at: input.created_at || now,
-      sync_status: 'pending',
+      sync_status: 'synced',
     });
 
     return id;

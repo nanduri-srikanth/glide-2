@@ -1,8 +1,12 @@
 /**
- * DiffReviewModal - Shows added/removed changes after AI re-synthesis
+ * DiffReviewModal - Shows inline diff after AI re-synthesis
  * so the user can accept or discard the result.
+ *
+ * Uses Apple Notes-style inline diff: added text gets a green background,
+ * removed text gets a red background with line-through, and unchanged
+ * text renders normally.
  */
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   StyleSheet,
   View,
@@ -17,6 +21,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { NotesColors } from '@/constants/theme';
+import { computeWordDiff, DiffSegment } from '@/utils/diffUtils';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -25,8 +30,9 @@ interface DiffReviewModalProps {
   onAccept: () => void;
   onDiscard: () => void;
   diff: {
-    added: string[];
-    removed: string[];
+    oldText: string;
+    newText: string;
+    what_removed: string | null;
   } | null;
   isLoading?: boolean;
 }
@@ -40,8 +46,19 @@ export function DiffReviewModal({
 }: DiffReviewModalProps) {
   const insets = useSafeAreaInsets();
 
-  const hasChanges =
-    diff !== null && (diff.added.length > 0 || diff.removed.length > 0);
+  const segments: DiffSegment[] = useMemo(() => {
+    if (!diff) return [];
+    return computeWordDiff(diff.oldText, diff.newText);
+  }, [diff]);
+
+  const hasTextChanges = useMemo(() => {
+    return segments.some((s) => s.type === 'added' || s.type === 'removed');
+  }, [segments]);
+
+  const hasWhatRemoved = Boolean(diff?.what_removed);
+
+  // Block Accept if there are no text changes AND no what_removed info
+  const hasChanges = hasTextChanges || hasWhatRemoved;
 
   return (
     <Modal
@@ -129,41 +146,49 @@ export function DiffReviewModal({
               keyboardShouldPersistTaps="handled"
               bounces
             >
-              {/* Added section */}
-              {diff!.added.length > 0 && (
-                <View style={styles.section}>
-                  <View style={styles.sectionHeader}>
-                    <Ionicons
-                      name="add-circle"
-                      size={20}
-                      color="#10B981"
-                    />
-                    <Text style={styles.sectionTitleAdded}>Added</Text>
-                  </View>
-                  {diff!.added.map((item, index) => (
-                    <View key={`added-${index}`} style={styles.addedCard}>
-                      <Text style={styles.addedText}>{item}</Text>
-                    </View>
-                  ))}
+              {/* What was removed banner */}
+              {hasWhatRemoved && (
+                <View style={styles.whatRemovedBanner}>
+                  <Ionicons
+                    name="alert-circle"
+                    size={20}
+                    color="#DC2626"
+                    style={styles.whatRemovedIcon}
+                  />
+                  <Text style={styles.whatRemovedText}>
+                    {diff!.what_removed}
+                  </Text>
                 </View>
               )}
 
-              {/* Removed section */}
-              {diff!.removed.length > 0 && (
-                <View style={styles.section}>
-                  <View style={styles.sectionHeader}>
-                    <Ionicons
-                      name="remove-circle"
-                      size={20}
-                      color="#EF4444"
-                    />
-                    <Text style={styles.sectionTitleRemoved}>Removed</Text>
-                  </View>
-                  {diff!.removed.map((item, index) => (
-                    <View key={`removed-${index}`} style={styles.removedCard}>
-                      <Text style={styles.removedText}>{item}</Text>
-                    </View>
-                  ))}
+              {/* Inline diff display */}
+              {hasTextChanges && (
+                <View style={styles.inlineDiffContainer}>
+                  <Text style={styles.inlineDiffText}>
+                    {segments.map((segment, index) => {
+                      switch (segment.type) {
+                        case 'added':
+                          return (
+                            <Text key={index} style={styles.segmentAdded}>
+                              {segment.text}
+                            </Text>
+                          );
+                        case 'removed':
+                          return (
+                            <Text key={index} style={styles.segmentRemoved}>
+                              {segment.text}
+                            </Text>
+                          );
+                        case 'unchanged':
+                        default:
+                          return (
+                            <Text key={index} style={styles.segmentUnchanged}>
+                              {segment.text}
+                            </Text>
+                          );
+                      }
+                    })}
+                  </Text>
                 </View>
               )}
             </ScrollView>
@@ -253,51 +278,53 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 8,
   },
-  section: {
-    marginBottom: 20,
-  },
-  sectionHeader: {
+
+  /* What was removed banner */
+  whatRemovedBanner: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
-  },
-  sectionTitleAdded: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#065F46',
-  },
-  sectionTitleRemoved: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#991B1B',
-  },
-  addedCard: {
-    backgroundColor: '#ECFDF5',
-    borderLeftWidth: 3,
-    borderLeftColor: '#10B981',
-    borderRadius: 8,
+    alignItems: 'flex-start',
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.25)',
     padding: 12,
-    marginBottom: 8,
+    marginBottom: 16,
   },
-  addedText: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: '#065F46',
+  whatRemovedIcon: {
+    marginRight: 10,
+    marginTop: 1,
   },
-  removedCard: {
-    backgroundColor: '#FEF2F2',
-    borderLeftWidth: 3,
-    borderLeftColor: '#EF4444',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 8,
-  },
-  removedText: {
-    fontSize: 15,
-    lineHeight: 22,
+  whatRemovedText: {
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 20,
     color: '#991B1B',
+    fontWeight: '500',
+  },
+
+  /* Inline diff */
+  inlineDiffContainer: {
+    backgroundColor: NotesColors.background,
+    borderRadius: 10,
+    padding: 14,
+  },
+  inlineDiffText: {
+    fontSize: 15,
+    lineHeight: 24,
+    color: NotesColors.textPrimary,
+  },
+  segmentUnchanged: {
+    color: NotesColors.textPrimary,
+  },
+  segmentAdded: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    color: NotesColors.textPrimary,
+  },
+  segmentRemoved: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
     textDecorationLine: 'line-through',
+    opacity: 0.7,
+    color: NotesColors.textPrimary,
   },
 });
 

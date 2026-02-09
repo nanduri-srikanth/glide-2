@@ -330,6 +330,8 @@ export async function initializeDatabase(): Promise<void> {
         'CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status)',
         'CREATE INDEX IF NOT EXISTS idx_audio_uploads_note_id ON audio_uploads(note_id)',
         'CREATE INDEX IF NOT EXISTS idx_audio_uploads_status ON audio_uploads(status)',
+        'CREATE INDEX IF NOT EXISTS idx_note_inputs_note_id ON note_inputs(note_id, created_at)',
+        'CREATE INDEX IF NOT EXISTS idx_note_versions_note_id ON note_versions(note_id, created_at)',
       ];
 
       for (const sql of indexStatements) {

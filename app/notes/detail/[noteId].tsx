@@ -44,7 +44,7 @@ import { MarkdownContent } from '@/components/notes/MarkdownContent';
 import { InputHistoryEntry } from '@/services/voice';
 import { GlideRichTextEditor, GlideRichTextEditorHandle } from '@/components/notes/GlideRichTextEditor';
 import { useRichEditorEnabled } from '@/hooks/useRichEditorEnabled';
-import { richContentRepository } from '@/lib/repositories';
+import { richContentRepository, noteVersionsRepository } from '@/lib/repositories';
 import { DiffReviewModal } from '@/components/notes/DiffReviewModal';
 import { historyService, type SynthesizeResponse } from '@/services/history';
 
@@ -130,11 +130,11 @@ export default function NoteDetailScreen() {
     error,
     deleteNote,
     updateNote,
+    refresh,
     executeAction,
     appendAudio,
     addContent,
     deleteInput,
-    resynthesizeNote,
     inputHistory,
     lastDecision,
     isAppending,
@@ -193,6 +193,7 @@ export default function NoteDetailScreen() {
   const [showDiffReview, setShowDiffReview] = useState(false);
   const [isSynthesizing, setIsSynthesizing] = useState(false);
   const [synthDiff, setSynthDiff] = useState<SynthesizeResponse['diff'] | null>(null);
+  const [synthResult, setSynthResult] = useState<SynthesizeResponse | null>(null);
 
   // Edit mode state
   const [isEditing, setIsEditing] = useState(false);
@@ -632,15 +633,47 @@ export default function NoteDetailScreen() {
 
   const handleAcceptSynth = useCallback(async () => {
     setShowDiffReview(false);
-    const success = await resynthesizeNote();
-    if (success) {
-      Alert.alert('Success', 'Note has been re-synthesized.');
+    if (!synthResult || !noteId) return;
+
+    try {
+      const version = synthResult.version;
+      const success = await updateNote({
+        title: version.title ?? undefined,
+        transcript: version.body_plain ?? undefined,
+      });
+
+      if (success) {
+        // Create a version snapshot locally
+        try {
+          await noteVersionsRepository.create({
+            note_id: noteId,
+            kind: 'synth',
+            actor: 'ai',
+            title: version.title || null,
+            body_plain: version.body_plain || null,
+            summary_plain: version.summary_plain || null,
+          });
+          await noteVersionsRepository.prune(noteId);
+        } catch (err) {
+          console.warn('[NoteDetail] Failed to create version after accept synth:', err);
+        }
+
+        await refresh();
+        Alert.alert('Success', 'Note has been re-synthesized.');
+      }
+    } catch (err) {
+      console.warn('[NoteDetail] Failed to apply synth result:', err);
+      Alert.alert('Error', 'Failed to apply changes. Please try again.');
+    } finally {
+      setSynthResult(null);
+      setSynthDiff(null);
     }
-  }, [resynthesizeNote]);
+  }, [synthResult, noteId, updateNote, refresh]);
 
   const handleDiscardSynth = useCallback(() => {
     setShowDiffReview(false);
     setSynthDiff(null);
+    setSynthResult(null);
   }, []);
 
   const MAX_TAGS = 10;
@@ -732,6 +765,7 @@ export default function NoteDetailScreen() {
         setShowDiffReview(false);
         return;
       }
+      setSynthResult(data);
       setSynthDiff(data.diff);
     });
   };

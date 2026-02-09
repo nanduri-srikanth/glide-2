@@ -25,7 +25,7 @@ class NoteInputsRepository {
       ...input,
       id: input.id || Crypto.randomUUID(),
       created_at: input.created_at || now,
-      sync_status: input.sync_status || 'pending',
+      sync_status: input.sync_status || 'synced',
     });
   }
 

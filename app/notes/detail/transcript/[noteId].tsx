@@ -11,6 +11,7 @@ import { useLocalSearchParams, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { NotesColors } from '@/constants/theme';
 import { noteInputsRepository } from '@/lib/repositories';
+import { notesService } from '@/services/notes';
 import type { NoteInputRow } from '@/lib/database/schema';
 
 function formatRelativeTime(dateStr: string): string {
@@ -68,6 +69,7 @@ export default function FullTranscriptScreen() {
   const { noteId } = useLocalSearchParams<{ noteId: string }>();
   const [inputs, setInputs] = useState<NoteInputRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [fromServer, setFromServer] = useState(false);
 
   useEffect(() => {
     if (!noteId) return;
@@ -79,6 +81,32 @@ export default function FullTranscriptScreen() {
         const rows = await noteInputsRepository.getAllForNote(noteId!);
         if (!cancelled) {
           setInputs(rows);
+        }
+
+        // If local SQLite is empty, try fetching from server as fallback
+        if (rows.length === 0) {
+          try {
+            const { data } = await notesService.getNote(noteId!);
+            if (data?.ai_metadata?.input_history && data.ai_metadata.input_history.length > 0) {
+              const serverInputs: NoteInputRow[] = data.ai_metadata.input_history.map((entry: any, idx: number) => ({
+                id: `server_${idx}`,
+                note_id: noteId!,
+                created_at: entry.timestamp || new Date().toISOString(),
+                type: entry.type || 'text',
+                source: 'user',
+                text_plain: entry.content || null,
+                audio_url: entry.audio_key || null,
+                meta: entry.duration != null ? JSON.stringify({ duration: entry.duration }) : null,
+                sync_status: 'synced',
+              }));
+              if (!cancelled) {
+                setInputs(serverInputs);
+                setFromServer(true);
+              }
+            }
+          } catch (serverErr) {
+            console.warn('Failed to load note inputs from server:', serverErr);
+          }
         }
       } catch (err) {
         console.warn('Failed to load note inputs:', err);
@@ -147,6 +175,13 @@ export default function FullTranscriptScreen() {
         <Text style={styles.inputCount}>
           {inputs.length} {inputs.length === 1 ? 'input' : 'inputs'}
         </Text>
+
+        {fromServer && (
+          <View style={styles.serverBanner}>
+            <Ionicons name="cloud-outline" size={14} color={NotesColors.textSecondary} />
+            <Text style={styles.serverBannerText}>Loaded from server</Text>
+          </View>
+        )}
 
         {inputs.map((input) => (
           <View key={input.id} style={styles.card}>
@@ -269,6 +304,22 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+  serverBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    backgroundColor: 'rgba(139, 133, 208, 0.08)',
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  serverBannerText: {
+    fontSize: 12,
+    color: NotesColors.textSecondary,
+    fontWeight: '500',
   },
   // Card
   card: {

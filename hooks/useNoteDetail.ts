@@ -5,6 +5,7 @@
  */
 
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import * as Crypto from 'expo-crypto';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNoteDetailQuery, useUpdateNoteMutation, useDeleteNoteMutation, queryKeys } from '@/hooks/queries';
 import { notesService, NoteDetailResponse } from '@/services/notes';
@@ -20,7 +21,7 @@ import type { NoteInputInsert } from '@/lib/database/schema';
  */
 function rawInputsToInserts(noteId: string, rawInputs: InputHistoryEntry[]): NoteInputInsert[] {
   return rawInputs.map((entry) => ({
-    id: `${noteId}_${entry.timestamp}`,
+    id: Crypto.randomUUID(),
     note_id: noteId,
     created_at: entry.timestamp,
     type: entry.type,

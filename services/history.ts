@@ -37,8 +37,9 @@ export interface SynthesizeRequest {
 export interface SynthesizeResponse {
   version: NoteVersionResponse;
   diff: {
-    added: string[];
-    removed: string[];
+    oldText: string;
+    newText: string;
+    what_removed: string | null;
   };
 }
 
