@@ -1,4 +1,4 @@
-import { eq, and, or, like, desc, asc, sql, isNull } from 'drizzle-orm';
+import { eq, and, or, like, desc, asc, sql, isNull, notInArray, ne } from 'drizzle-orm';
 import { db } from '../database/client';
 import { notes, actions, type NoteRow, type NoteInsert, type SyncStatus, type ActionRow } from '../database/schema';
 import { BaseRepository } from './BaseRepository';
@@ -398,6 +398,55 @@ class NotesRepository extends BaseRepository<NoteRow, NoteInsert, typeof notes> 
         await db.insert(notes).values(noteData);
       }
     }
+  }
+
+  /**
+   * Prune local notes that are no longer present on the server snapshot.
+   *
+   * This helps handle out-of-band server deletes (including manual wipes) while
+   * preserving local pending changes.
+   */
+  async pruneMissingFromServer(serverNoteIds: string[], userId: string): Promise<void> {
+    // Delete rows that are NOT pending (including NULL).
+    const shouldDelete = or(isNull(notes.sync_status), ne(notes.sync_status, 'pending'));
+
+    if (serverNoteIds.length === 0) {
+      // Server has no notes: remove all synced local notes (and their actions) for the user.
+      const localNoteIds = await this.getAllIds(userId);
+      for (const id of localNoteIds) {
+        await db.delete(actions).where(eq(actions.note_id, id));
+      }
+      await db
+        .delete(notes)
+        .where(and(eq(notes.user_id, userId), shouldDelete));
+      return;
+    }
+
+    // Delete actions + notes for notes not present on the server.
+    const staleNotes = await db
+      .select({ id: notes.id })
+      .from(notes)
+      .where(
+        and(
+          eq(notes.user_id, userId),
+          notInArray(notes.id, serverNoteIds),
+          shouldDelete
+        )
+      );
+
+    for (const row of staleNotes) {
+      await db.delete(actions).where(eq(actions.note_id, row.id));
+    }
+
+    await db
+      .delete(notes)
+      .where(
+        and(
+          eq(notes.user_id, userId),
+          notInArray(notes.id, serverNoteIds),
+          shouldDelete
+        )
+      );
   }
 
   /**

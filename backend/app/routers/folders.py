@@ -87,6 +87,7 @@ async def list_folders(
         select(Note.folder_id, func.count(Note.id))
         .where(Note.user_id == current_user.id)
         .where(Note.is_deleted == False)
+        .where(Note.is_archived == False)
         .group_by(Note.folder_id)
     )
     counts = dict(count_result.all())
@@ -96,6 +97,7 @@ async def list_folders(
         select(func.count(Note.id))
         .where(Note.user_id == current_user.id)
         .where(Note.is_deleted == False)
+        .where(Note.is_archived == False)
     )
     total_count = total_result.scalar() or 0
 
