@@ -407,7 +407,7 @@ export default function NoteDetailScreen() {
     setTagsExpanded(false);
     if (richEditorEnabled) {
       // Small delay to let editable prop propagate before focusing
-      setTimeout(() => richEditorRef.current?.focus?.(), 50);
+      setTimeout(() => richEditorRef.current?.focus(), 50);
     } else {
       setTimeout(() => transcriptInputRef.current?.focus(), 100);
     }

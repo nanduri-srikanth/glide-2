@@ -96,14 +96,12 @@ export const GlideRichTextEditor = forwardRef<GlideRichTextEditorHandle, GlideRi
     // Prop-based trigger: incrementing snapshotNonce causes the native view to
     // capture an RTF snapshot and fire onRichSnapshot.  This avoids command
     // dispatch which doesn't work through the New Architecture interop layer.
+    // Intentionally omit the deps array so Fast Refresh can update the ref handle
+    // when methods are added/changed (otherwise the handle can be stale until remount).
     useImperativeHandle(ref, () => ({
-      requestRtfSnapshot: () => {
-        setSnapshotNonce(n => n + 1);
-      },
-      focus: () => {
-        setFocusNonce(n => n + 1);
-      },
-    }), []);
+      requestRtfSnapshot: () => setSnapshotNonce(n => n + 1),
+      focus: () => setFocusNonce(n => n + 1),
+    }));
 
     if (Platform.OS !== 'ios') {
       return null;
