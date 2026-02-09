@@ -125,6 +125,12 @@ TRANSCRIPT_APPEND_NEW = (
     "Also the stakeholder review got moved to Friday afternoon at 2pm in the main conf room."
 )
 
+TRANSCRIPT_SEQUENTIAL = (
+    "To reset the router, first unplug it for 30 seconds. "
+    "Then plug it back in and wait for the lights to stabilize. "
+    "Finally, run a speed test and record the results."
+)
+
 
 # ---------------------------------------------------------------------------
 # Canned LLM Responses
@@ -258,6 +264,45 @@ CANNED_EMAIL_RESPONSE = json.dumps({
         "Please let me know if you'd like to discuss the adjusted timeline.\n\n"
         "Best regards"
     ),
+})
+
+CANNED_SEQUENTIAL_RESPONSE = json.dumps({
+    "narrative": (
+        "## Steps\n"
+        "1. Unplug the router for 30 seconds\n"
+        "2. Plug it back in and wait for the lights to stabilize\n"
+        "3. Run a speed test and record the results"
+    ),
+    "title": "Router Reset Instructions",
+    "folder": "Personal",
+    "tags": ["wifi", "troubleshooting"],
+    "summary": "Step-by-step router reset instructions and verification.",
+    "format_signals": {
+        "has_discrete_items": True,
+        "has_sequential_steps": True,
+        "has_action_items": True,
+        "is_reflective": False,
+        "topic_count": 1,
+        "tone": "professional",
+    },
+    "format_recipe": "header_sections + numbered_list + prose_paragraph",
+    "related_entities": {
+        "people": [],
+        "projects": [],
+        "companies": [],
+        "concepts": ["router reset", "speed test"],
+    },
+    "open_loops": [],
+    "calendar": [],
+    "email": [],
+    "reminders": [
+        {
+            "title": "Run a speed test after router reset",
+            "due_date": None,
+            "priority": "low",
+            "intent_source": "COMMITMENT_TO_SELF",
+        }
+    ],
 })
 
 CANNED_SUMMARIZE_NOTE_RESPONSE = (

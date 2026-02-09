@@ -47,7 +47,9 @@ Based on the signals, compose a format from these building blocks:
 - key_value: **Label:** value pairs for structured data
 - quote_block: Blockquoted text for preserving exact phrasing
 
-Combine blocks with "+" to create a recipe. The recipe determines how you format the note content."""
+Combine blocks with "+" to create a recipe. The recipe determines how you format the note content.
+
+**Key rule:** When `has_sequential_steps` is true, ALWAYS extract the steps into a numbered_list --- even if the input is written as flowing prose. Do not leave sequential steps buried in paragraphs."""
 
 FORMAT_FEWSHOT_EXAMPLES = """\
 ## FORMAT EXAMPLES
@@ -118,7 +120,26 @@ I'm also feeling pretty burnt out on writing the whole thing solo. Maybe I shoul
 
 ## Action Items
 - [ ] Finish the Q4 report by Wednesday
-- [ ] Schedule the team offsite for January"""
+- [ ] Schedule the team offsite for January
+
+**Example 6 --- How-to / sequential steps embedded in prose**
+Input: "To optimize your time and take control of your schedule, it's essential to level up your planning system using Google Calendar. The first step is to categorize your life into different areas and create a separate calendar for each category. Assign a specific color to each category using a color-coding system, which will be crucial for later use. Next, apply the time-blocking method to plan your time effectively. Start by blocking out time for the most important and urgent tasks and appointments in your weekly overview, then move on to less important and less urgent ones. After scheduling all your tasks, you'll likely have large chunks of free time, which can be utilized for activities you want to do, such as studying, building a business, or working on a project. Use one to two hour gaps in your schedule as focus blocks to achieve real results. By implementing this system, you'll gain a clear overview of your week and understand how you're spending your time."
+format_signals: {has_discrete_items: true, has_sequential_steps: true, has_action_items: true, is_reflective: false, topic_count: 1, tone: "professional"}
+format_recipe: "header_sections + numbered_list + prose_paragraph"
+Output:
+## Goal
+Level up your planning system using Google Calendar to optimize time and take control of your schedule.
+
+## Steps
+1. Categorize your life into different areas and create a separate calendar for each category
+2. Assign a specific color to each category using a color-coding system
+3. Apply the time-blocking method --- block out the most important and urgent tasks first
+4. Schedule less important and less urgent tasks next
+5. Fill large chunks of free time with activities you want to do (studying, building a business, projects)
+6. Use one to two hour gaps as focus blocks for real results
+
+## Outcome
+You'll gain a clear overview of your week and understand how you're spending your time."""
 
 INTENT_CLASSIFICATION_BLOCK = """\
 ## ACTION EXTRACTION --- Intent-Based Classification

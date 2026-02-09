@@ -75,6 +75,9 @@ def client(test_db):
     """Create test client."""
     # Disable app startup DB init (uses production async engine)
     app_main.settings.debug = False
+    # Avoid Supabase JWKS network calls during tests; use legacy JWT flow.
+    app_main.settings.supabase_url = ""
+    app_main.settings.allow_legacy_jwt = True
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as c:
         yield c

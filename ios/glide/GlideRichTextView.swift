@@ -11,6 +11,10 @@ protocol FormattingTextViewDelegate: AnyObject {
   func formattingToggleUnderline()
   func formattingToggleStrikethrough()
   func formattingToggleHighlight()
+  func formattingToggleBulletList()
+  func formattingToggleNumberedList()
+  func formattingIndent()
+  func formattingOutdent()
   func formattingClearFormatting()
   var isFormattingEditable: Bool { get }
 }
@@ -23,10 +27,10 @@ final class FormattingTextView: UITextView {
   override func buildMenu(with builder: any UIMenuBuilder) {
     super.buildMenu(with: builder)
 
-    // Only add formatting when editable and there's a selection
-    guard formattingDelegate?.isFormattingEditable == true,
-          selectedRange.length > 0 else { return }
+    // Show formatting menu when editable (list/indent work at cursor, inline formatting handles cursor too)
+    guard formattingDelegate?.isFormattingEditable == true else { return }
 
+    // -- Text style actions --
     let boldAction = UIAction(title: "Bold", image: UIImage(systemName: "bold")) { [weak self] _ in
       self?.formattingDelegate?.formattingToggleBold()
     }
@@ -42,14 +46,39 @@ final class FormattingTextView: UITextView {
     let highlightAction = UIAction(title: "Highlight", image: UIImage(systemName: "highlighter")) { [weak self] _ in
       self?.formattingDelegate?.formattingToggleHighlight()
     }
+
+    let textStyleMenu = UIMenu(title: "", options: .displayInline, children: [
+      boldAction, italicAction, underlineAction, strikethroughAction, highlightAction,
+    ])
+
+    // -- List & indent actions --
+    let bulletAction = UIAction(title: "Bullet List", image: UIImage(systemName: "list.bullet")) { [weak self] _ in
+      self?.formattingDelegate?.formattingToggleBulletList()
+    }
+    let numberedAction = UIAction(title: "Numbered List", image: UIImage(systemName: "list.number")) { [weak self] _ in
+      self?.formattingDelegate?.formattingToggleNumberedList()
+    }
+    let indentAction = UIAction(title: "Indent", image: UIImage(systemName: "increase.indent")) { [weak self] _ in
+      self?.formattingDelegate?.formattingIndent()
+    }
+    let outdentAction = UIAction(title: "Outdent", image: UIImage(systemName: "decrease.indent")) { [weak self] _ in
+      self?.formattingDelegate?.formattingOutdent()
+    }
+
+    let listMenu = UIMenu(title: "", options: .displayInline, children: [
+      bulletAction, numberedAction, indentAction, outdentAction,
+    ])
+
+    // -- Clear formatting --
     let clearAction = UIAction(title: "Clear Formatting", image: UIImage(systemName: "textformat"), attributes: .destructive) { [weak self] _ in
       self?.formattingDelegate?.formattingClearFormatting()
     }
+    let clearMenu = UIMenu(title: "", options: .displayInline, children: [clearAction])
 
     let formattingMenu = UIMenu(
       title: "Format",
       image: UIImage(systemName: "textformat"),
-      children: [boldAction, italicAction, underlineAction, strikethroughAction, highlightAction, clearAction]
+      children: [textStyleMenu, listMenu, clearMenu]
     )
 
     builder.insertSibling(formattingMenu, beforeMenu: .standardEdit)
@@ -411,6 +440,15 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
         continue
       }
 
+      // 1. Numbered list item (matches "1. ", "2. ", "10. ", etc.)
+      if let range = trimmed.range(of: #"^\d+\.\s"#, options: .regularExpression) {
+        let itemText = String(trimmed[range.upperBound...])
+        let numberPrefix = String(trimmed[trimmed.startIndex..<range.upperBound])
+        let lineAttr = buildListLine(prefix: numberPrefix, text: itemText, font: bodyFont, color: textColor)
+        result.append(lineAttr)
+        continue
+      }
+
       // Plain text / prose paragraph
       let paraStyle = defaultParagraphStyle()
       let attrs: [NSAttributedString.Key: Any] = [
@@ -753,6 +791,192 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
     ]
   }
 
+  // MARK: - List & Indent Commands
+
+  private static let bulletPrefix = "\u{2022}  "
+  private static let indentStep: CGFloat = 24
+
+  /// Returns the paragraph style used for list items (bullet, numbered).
+  private func listParagraphStyle() -> NSMutableParagraphStyle {
+    let style = NSMutableParagraphStyle()
+    style.lineSpacing = 4
+    style.paragraphSpacing = 4
+    style.lineHeightMultiple = 1.15
+    style.headIndent = 24
+    style.firstLineHeadIndent = 8
+    return style
+  }
+
+  /// Builds prefix attributes using existing line styles when possible.
+  private func listPrefixAttributes(at location: Int) -> [NSAttributedString.Key: Any] {
+    var attrs: [NSAttributedString.Key: Any] = [:]
+    if location >= 0 && location < textView.textStorage.length {
+      attrs = textView.textStorage.attributes(at: location, effectiveRange: nil)
+    }
+    if attrs[.font] == nil {
+      attrs[.font] = textView.font ?? UIFont.preferredFont(forTextStyle: .body)
+    }
+    if attrs[.foregroundColor] == nil {
+      attrs[.foregroundColor] = UIColor.label
+    }
+    attrs[.paragraphStyle] = listParagraphStyle()
+    return attrs
+  }
+
+  /// Expands a range (or cursor position) to cover full paragraphs.
+  private func fullParagraphRange(for range: NSRange) -> NSRange {
+    let nsText = (textView.text ?? "") as NSString
+    return nsText.paragraphRange(for: range)
+  }
+
+  /// Collects individual paragraph sub-ranges within a full paragraph range.
+  private func paragraphSubRanges(in paraRange: NSRange) -> [NSRange] {
+    let nsText = (textView.text ?? "") as NSString
+    var ranges: [NSRange] = []
+    var loc = paraRange.location
+    while loc < NSMaxRange(paraRange) {
+      let lineRange = nsText.paragraphRange(for: NSRange(location: loc, length: 0))
+      ranges.append(lineRange)
+      loc = NSMaxRange(lineRange)
+    }
+    return ranges
+  }
+
+  func toggleBulletList() {
+    prepareForFormatting()
+    let storage = textView.textStorage
+    let paraRange = fullParagraphRange(for: textView.selectedRange)
+    let subRanges = paragraphSubRanges(in: paraRange)
+
+    storage.beginEditing()
+    // Process in reverse to avoid range invalidation
+    for range in subRanges.reversed() {
+      let lineText = storage.attributedSubstring(from: range).string
+
+      if lineText.hasPrefix(Self.bulletPrefix) {
+        // Remove bullet prefix and reset paragraph style
+        let prefixRange = NSRange(location: range.location, length: Self.bulletPrefix.count)
+        storage.replaceCharacters(in: prefixRange, with: "")
+        let newLineRange = NSRange(location: range.location, length: range.length - Self.bulletPrefix.count)
+        if newLineRange.length > 0 {
+          storage.addAttribute(.paragraphStyle, value: defaultParagraphStyle(), range: newLineRange)
+        }
+      } else if lineText.range(of: #"^\d+\.\s"#, options: .regularExpression) != nil {
+        // Replace number prefix with bullet prefix
+        if let swiftRange = lineText.range(of: #"^\d+\.\s"#, options: .regularExpression) {
+          let prefixLen = lineText.distance(from: swiftRange.lowerBound, to: swiftRange.upperBound)
+          let prefixNSRange = NSRange(location: range.location, length: prefixLen)
+          let attrs = listPrefixAttributes(at: range.location)
+          storage.replaceCharacters(in: prefixNSRange, with: NSAttributedString(string: Self.bulletPrefix, attributes: attrs))
+          let newLineRange = NSRange(location: range.location, length: range.length - prefixLen + Self.bulletPrefix.count)
+          if newLineRange.length > 0 {
+            storage.addAttribute(.paragraphStyle, value: listParagraphStyle(), range: newLineRange)
+          }
+        }
+      } else {
+        // Add bullet prefix and list paragraph style
+        let attrs = listPrefixAttributes(at: range.location)
+        storage.insert(NSAttributedString(string: Self.bulletPrefix, attributes: attrs), at: range.location)
+        let newLineRange = NSRange(location: range.location, length: range.length + Self.bulletPrefix.count)
+        if newLineRange.length > 0 {
+          storage.addAttribute(.paragraphStyle, value: listParagraphStyle(), range: newLineRange)
+        }
+      }
+    }
+    storage.endEditing()
+  }
+
+  func toggleNumberedList() {
+    prepareForFormatting()
+    let storage = textView.textStorage
+    let paraRange = fullParagraphRange(for: textView.selectedRange)
+    let subRanges = paragraphSubRanges(in: paraRange)
+
+    // First pass: determine if we're toggling off (all lines already numbered)
+    let allNumbered = subRanges.allSatisfy { range in
+      let lineText = storage.attributedSubstring(from: range).string
+      return lineText.range(of: #"^\d+\.\s"#, options: .regularExpression) != nil
+    }
+
+    storage.beginEditing()
+    // Process in reverse to avoid range invalidation
+    for (reverseIdx, range) in subRanges.reversed().enumerated() {
+      let lineText = storage.attributedSubstring(from: range).string
+      let forwardIdx = subRanges.count - 1 - reverseIdx
+      let numberPrefix = "\(forwardIdx + 1). "
+
+      if allNumbered {
+        // Remove number prefix and reset paragraph style
+        if let swiftRange = lineText.range(of: #"^\d+\.\s"#, options: .regularExpression) {
+          let prefixLen = lineText.distance(from: swiftRange.lowerBound, to: swiftRange.upperBound)
+          let prefixNSRange = NSRange(location: range.location, length: prefixLen)
+          storage.replaceCharacters(in: prefixNSRange, with: "")
+          let newLineRange = NSRange(location: range.location, length: range.length - prefixLen)
+          if newLineRange.length > 0 {
+            storage.addAttribute(.paragraphStyle, value: defaultParagraphStyle(), range: newLineRange)
+          }
+        }
+      } else if lineText.hasPrefix(Self.bulletPrefix) {
+        // Replace bullet prefix with number prefix
+        let prefixNSRange = NSRange(location: range.location, length: Self.bulletPrefix.count)
+        let attrs = listPrefixAttributes(at: range.location)
+        storage.replaceCharacters(in: prefixNSRange, with: NSAttributedString(string: numberPrefix, attributes: attrs))
+        let newLineRange = NSRange(location: range.location, length: range.length - Self.bulletPrefix.count + numberPrefix.count)
+        if newLineRange.length > 0 {
+          storage.addAttribute(.paragraphStyle, value: listParagraphStyle(), range: newLineRange)
+        }
+      } else if lineText.range(of: #"^\d+\.\s"#, options: .regularExpression) != nil {
+        // Already numbered — renumber with correct index
+        if let swiftRange = lineText.range(of: #"^\d+\.\s"#, options: .regularExpression) {
+          let prefixLen = lineText.distance(from: swiftRange.lowerBound, to: swiftRange.upperBound)
+          let prefixNSRange = NSRange(location: range.location, length: prefixLen)
+          storage.replaceCharacters(in: prefixNSRange, with: numberPrefix)
+        }
+      } else {
+        // Add number prefix and list paragraph style
+        let attrs = listPrefixAttributes(at: range.location)
+        storage.insert(NSAttributedString(string: numberPrefix, attributes: attrs), at: range.location)
+        let newLineRange = NSRange(location: range.location, length: range.length + numberPrefix.count)
+        if newLineRange.length > 0 {
+          storage.addAttribute(.paragraphStyle, value: listParagraphStyle(), range: newLineRange)
+        }
+      }
+    }
+    storage.endEditing()
+  }
+
+  func increaseIndent() {
+    prepareForFormatting()
+    let storage = textView.textStorage
+    let paraRange = fullParagraphRange(for: textView.selectedRange)
+
+    storage.beginEditing()
+    storage.enumerateAttribute(.paragraphStyle, in: paraRange, options: []) { value, subrange, _ in
+      let current = (value as? NSParagraphStyle) ?? defaultParagraphStyle()
+      let style = current.mutableCopy() as! NSMutableParagraphStyle
+      style.headIndent += Self.indentStep
+      style.firstLineHeadIndent += Self.indentStep
+      storage.addAttribute(.paragraphStyle, value: style, range: subrange)
+    }
+    storage.endEditing()
+  }
+
+  func decreaseIndent() {
+    prepareForFormatting()
+    let storage = textView.textStorage
+    let paraRange = fullParagraphRange(for: textView.selectedRange)
+
+    storage.beginEditing()
+    storage.enumerateAttribute(.paragraphStyle, in: paraRange, options: []) { value, subrange, _ in
+      let current = (value as? NSParagraphStyle) ?? defaultParagraphStyle()
+      let style = current.mutableCopy() as! NSMutableParagraphStyle
+      style.headIndent = max(0, style.headIndent - Self.indentStep)
+      style.firstLineHeadIndent = max(0, style.firstLineHeadIndent - Self.indentStep)
+      storage.addAttribute(.paragraphStyle, value: style, range: subrange)
+    }
+    storage.endEditing()
+  }
+
   // MARK: - FormattingTextViewDelegate
 
   var isFormattingEditable: Bool { return editable }
@@ -762,6 +986,10 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
   func formattingToggleUnderline() { toggleUnderline() }
   func formattingToggleStrikethrough() { toggleStrikethrough() }
   func formattingToggleHighlight() { toggleHighlight() }
+  func formattingToggleBulletList() { toggleBulletList() }
+  func formattingToggleNumberedList() { toggleNumberedList() }
+  func formattingIndent() { increaseIndent() }
+  func formattingOutdent() { decreaseIndent() }
   func formattingClearFormatting() { clearFormatting() }
 
   func getRtfBase64() throws -> String {

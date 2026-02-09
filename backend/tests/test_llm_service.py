@@ -11,9 +11,11 @@ from tests.llm_helpers import (
     TRANSCRIPT_APPEND_EXISTING,
     TRANSCRIPT_APPEND_NEW,
     TRANSCRIPT_EMAIL_CONTEXT,
+    TRANSCRIPT_SEQUENTIAL,
     CANNED_EXTRACTION_RESPONSE,
     CANNED_SYNTHESIS_RESPONSE,
     CANNED_EMAIL_RESPONSE,
+    CANNED_SEQUENTIAL_RESPONSE,
 )
 
 
@@ -126,6 +128,15 @@ async def test_synthesize_llm():
     )
     assert result["title"] == "Product Sync Meeting Notes"
     assert result["folder"] == "Meetings"
+
+@pytest.mark.asyncio
+async def test_synthesize_llm_sequential_steps():
+    svc = _make_service(with_client=True, response_content=CANNED_SEQUENTIAL_RESPONSE)
+    result = await svc.synthesize_content(
+        text_input=TRANSCRIPT_SEQUENTIAL, audio_transcript=""
+    )
+    assert result["format_composition"]["format_signals"]["has_sequential_steps"] is True
+    assert "numbered_list" in result["format_composition"]["format_recipe"]
 
 
 # -- resynthesize_content --
