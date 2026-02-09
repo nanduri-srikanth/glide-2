@@ -529,10 +529,18 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
     storage.removeAttribute(.underlineStyle, range: range)
     storage.removeAttribute(.strikethroughStyle, range: range)
     storage.removeAttribute(.backgroundColor, range: range)
+    storage.removeAttribute(.link, range: range)
     storage.addAttribute(.font, value: defaultFont, range: range)
     storage.addAttribute(.foregroundColor, value: UIColor.label, range: range)
     storage.addAttribute(.paragraphStyle, value: defaultParagraphStyle(), range: range)
     storage.endEditing()
+
+    // Reset typing attributes to defaults so future input is unformatted.
+    textView.typingAttributes = [
+      .font: defaultFont,
+      .foregroundColor: UIColor.label,
+      .paragraphStyle: defaultParagraphStyle(),
+    ]
   }
 
   // MARK: - FormattingTextViewDelegate
