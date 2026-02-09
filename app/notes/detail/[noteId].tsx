@@ -46,6 +46,7 @@ import { richContentRepository, noteVersionsRepository } from '@/lib/repositorie
 import { DiffReviewModal } from '@/components/notes/DiffReviewModal';
 import { historyService, type SynthesizeResponse } from '@/services/history';
 import type { FormatType } from '@/components/notes/FormattingToolbar';
+import { MathToolbar } from '@/components/notes/MathToolbar';
 
 
 // Convert mock note actions to server action format for the useActionDrafts hook
@@ -223,6 +224,7 @@ export default function NoteDetailScreen() {
   const [isTranscriptFocused, setIsTranscriptFocused] = useState(false);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [showMathToolbar, setShowMathToolbar] = useState(false);
   const [tagsExpanded, setTagsExpanded] = useState(false);
   const [newTagText, setNewTagText] = useState('');
   const originalTitleRef = useRef<string>(''); // For reverting if user clears title
@@ -571,6 +573,12 @@ export default function NoteDetailScreen() {
       setEditedTranscript(prev => prev + formatting.prefix + formatting.suffix);
       setHasUnsavedChanges(true);
     }
+  }, []);
+
+  // Handle math symbol insert from MathToolbar
+  const handleMathInsert = useCallback((latex: string) => {
+    setEditedTranscript(prev => prev + latex);
+    setHasUnsavedChanges(true);
   }, []);
 
   // Handle recording complete from toolbar
@@ -1185,6 +1193,24 @@ export default function NoteDetailScreen() {
       </Animated.ScrollView>
 
 
+      {/* Math Toolbar - shown when editing and toggled on */}
+      {isEditing && showMathToolbar && (
+        <MathToolbar onInsert={handleMathInsert} />
+      )}
+
+      {/* Math Toolbar Toggle - shown when editing and keyboard is visible */}
+      {isEditing && isKeyboardVisible && (
+        <TouchableOpacity
+          style={[styles.mathToggleButton, showMathToolbar && styles.mathToggleButtonActive]}
+          onPress={() => setShowMathToolbar(prev => !prev)}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.mathToggleText, showMathToolbar && styles.mathToggleTextActive]}>
+            {'𝑥²'}
+          </Text>
+        </TouchableOpacity>
+      )}
+
       {/* Floating Mic Button - hidden when keyboard is visible */}
       {!isKeyboardVisible && (
         <TouchableOpacity
@@ -1634,6 +1660,37 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
+  },
+  // Math toolbar toggle button
+  mathToggleButton: {
+    position: 'absolute',
+    bottom: 24,
+    left: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: NotesColors.card,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.1)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  mathToggleButtonActive: {
+    backgroundColor: 'rgba(139, 133, 208, 0.2)',
+    borderColor: NotesColors.primary,
+  },
+  mathToggleText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: NotesColors.textSecondary,
+  },
+  mathToggleTextActive: {
+    color: NotesColors.primary,
   },
   // Options Menu styles
   optionsOverlay: {

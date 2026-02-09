@@ -376,7 +376,8 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
   // MARK: - Markdown Parser
 
   /// Parses LLM-produced markdown into NSAttributedString with proper formatting.
-  /// Supports: ## headers, - bullets, - [ ] / - [x] checklists, **bold**, _italic_ / *italic*
+  /// Supports: ## headers, - bullets, - [ ] / - [x] checklists, **bold**, _italic_ / *italic*,
+  /// $...$ inline math, $$...$$ block math
   private func parseMarkdownToAttributedString(_ markdown: String) -> NSAttributedString {
     let result = NSMutableAttributedString()
     let bodyFont = UIFont.preferredFont(forTextStyle: .body)
@@ -384,8 +385,38 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
     let textColor = UIColor.label
     let lines = markdown.components(separatedBy: "\n")
 
+    var blockMathBuffer: String? = nil  // Accumulates lines inside $$ ... $$
+
     for (index, line) in lines.enumerated() {
       let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+      // ── Block math accumulation ($$ ... $$) ──
+      if let buffer = blockMathBuffer {
+        if trimmed.hasSuffix("$$") {
+          let closing = String(trimmed.dropLast(2))
+          let fullLatex = buffer + (closing.isEmpty ? "" : "\n" + closing)
+          if index > 0 { result.append(NSAttributedString(string: "\n")) }
+          result.append(buildBlockMathLine(latex: fullLatex, font: bodyFont))
+          blockMathBuffer = nil
+        } else {
+          blockMathBuffer = buffer + "\n" + trimmed
+        }
+        continue
+      }
+
+      // Check for block math start
+      if trimmed.hasPrefix("$$") {
+        let afterOpen = String(trimmed.dropFirst(2))
+        if afterOpen.hasSuffix("$$") && afterOpen.count > 2 {
+          // Single-line block math: $$...$$ on one line
+          let latex = String(afterOpen.dropLast(2))
+          if index > 0 { result.append(NSAttributedString(string: "\n")) }
+          result.append(buildBlockMathLine(latex: latex, font: bodyFont))
+          continue
+        }
+        blockMathBuffer = afterOpen
+        continue
+      }
 
       if index > 0 {
         result.append(NSAttributedString(string: "\n"))
@@ -449,7 +480,7 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
         continue
       }
 
-      // Plain text / prose paragraph
+      // Plain text / prose paragraph (with inline math support)
       let paraStyle = defaultParagraphStyle()
       let attrs: [NSAttributedString.Key: Any] = [
         .font: bodyFont,
@@ -461,6 +492,187 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
     }
 
     return result
+  }
+
+  // MARK: - Math Rendering Helpers
+
+  /// Unicode maps for LaTeX → Unicode conversion
+
+  private static let greekMap: [String: String] = [
+    "\\alpha": "α", "\\beta": "β", "\\gamma": "γ", "\\delta": "δ",
+    "\\epsilon": "ε", "\\varepsilon": "ε", "\\zeta": "ζ", "\\eta": "η",
+    "\\theta": "θ", "\\iota": "ι", "\\kappa": "κ", "\\lambda": "λ",
+    "\\mu": "μ", "\\nu": "ν", "\\xi": "ξ", "\\pi": "π",
+    "\\rho": "ρ", "\\sigma": "σ", "\\tau": "τ", "\\upsilon": "υ",
+    "\\phi": "φ", "\\chi": "χ", "\\psi": "ψ", "\\omega": "ω",
+    "\\Gamma": "Γ", "\\Delta": "Δ", "\\Theta": "Θ", "\\Lambda": "Λ",
+    "\\Xi": "Ξ", "\\Pi": "Π", "\\Sigma": "Σ", "\\Phi": "Φ",
+    "\\Psi": "Ψ", "\\Omega": "Ω",
+  ]
+
+  private static let subscriptMap: [Character: Character] = [
+    "0": "₀", "1": "₁", "2": "₂", "3": "₃", "4": "₄",
+    "5": "₅", "6": "₆", "7": "₇", "8": "₈", "9": "₉",
+    "a": "ₐ", "e": "ₑ", "i": "ᵢ", "o": "ₒ", "x": "ₓ",
+    "n": "ₙ", "m": "ₘ", "r": "ᵣ", "s": "ₛ", "t": "ₜ",
+  ]
+
+  private static let superscriptMap: [Character: Character] = [
+    "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴",
+    "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹",
+    "+": "⁺", "-": "⁻", "n": "ⁿ", "i": "ⁱ",
+  ]
+
+  private static let symbolMap: [String: String] = [
+    "\\times": "×", "\\div": "÷", "\\cdot": "·", "\\pm": "±",
+    "\\leq": "≤", "\\geq": "≥", "\\neq": "≠", "\\approx": "≈",
+    "\\infty": "∞", "\\partial": "∂", "\\nabla": "∇",
+    "\\sum": "∑", "\\prod": "∏", "\\int": "∫", "\\sqrt": "√",
+    "\\rightarrow": "→", "\\leftarrow": "←", "\\to": "→",
+    "\\Rightarrow": "⇒", "\\Leftrightarrow": "⇔",
+    "\\degree": "°", "\\angle": "∠", "\\perp": "⊥",
+    "\\in": "∈", "\\notin": "∉", "\\subset": "⊂",
+    "\\cup": "∪", "\\cap": "∩",
+    "\\forall": "∀", "\\exists": "∃", "\\ldots": "…",
+    "\\langle": "⟨", "\\rangle": "⟩",
+  ]
+
+  private static let fractionMap: [String: String] = [
+    "1/2": "½", "1/3": "⅓", "2/3": "⅔", "1/4": "¼", "3/4": "¾",
+    "1/5": "⅕", "2/5": "⅖", "3/5": "⅗", "4/5": "⅘",
+    "1/8": "⅛", "3/8": "⅜", "5/8": "⅝", "7/8": "⅞",
+  ]
+
+  /// Converts a LaTeX string to Unicode text.
+  private func latexToUnicode(_ latex: String) -> String {
+    var result = latex.trimmingCharacters(in: .whitespaces)
+
+    // Greek letters (longest first)
+    for (cmd, uni) in Self.greekMap.sorted(by: { $0.key.count > $1.key.count }) {
+      result = result.replacingOccurrences(of: cmd, with: uni)
+    }
+
+    // Symbols (longest first)
+    for (cmd, uni) in Self.symbolMap.sorted(by: { $0.key.count > $1.key.count }) {
+      result = result.replacingOccurrences(of: cmd, with: uni)
+    }
+
+    // \frac{a}{b} → a⁄b or Unicode fraction
+    if let fracRegex = try? NSRegularExpression(pattern: #"\\frac\{([^}]+)\}\{([^}]+)\}"#) {
+      let nsResult = result as NSString
+      let matches = fracRegex.matches(in: result, range: NSRange(location: 0, length: nsResult.length))
+      for match in matches.reversed() {
+        let num = nsResult.substring(with: match.range(at: 1))
+        let den = nsResult.substring(with: match.range(at: 2))
+        let key = "\(num)/\(den)"
+        let replacement = Self.fractionMap[key] ?? "\(num)⁄\(den)"
+        result = (result as NSString).replacingCharacters(in: match.range, with: replacement)
+      }
+    }
+
+    // \sqrt{...} → √(...)
+    if let sqrtRegex = try? NSRegularExpression(pattern: #"\\sqrt\{([^}]+)\}"#) {
+      let nsResult = result as NSString
+      let matches = sqrtRegex.matches(in: result, range: NSRange(location: 0, length: nsResult.length))
+      for match in matches.reversed() {
+        let inner = nsResult.substring(with: match.range(at: 1))
+        result = (result as NSString).replacingCharacters(in: match.range, with: "√(\(inner))")
+      }
+    }
+
+    // Subscripts: _{...} or _x
+    if let subBracedRegex = try? NSRegularExpression(pattern: #"_\{([^}]+)\}"#) {
+      let nsResult = result as NSString
+      let matches = subBracedRegex.matches(in: result, range: NSRange(location: 0, length: nsResult.length))
+      for match in matches.reversed() {
+        let inner = nsResult.substring(with: match.range(at: 1))
+        let converted = String(inner.map { Self.subscriptMap[$0] ?? $0 })
+        result = (result as NSString).replacingCharacters(in: match.range, with: converted)
+      }
+    }
+    if let subSingleRegex = try? NSRegularExpression(pattern: #"_([0-9a-z])"#) {
+      let nsResult = result as NSString
+      let matches = subSingleRegex.matches(in: result, range: NSRange(location: 0, length: nsResult.length))
+      for match in matches.reversed() {
+        let ch = nsResult.substring(with: match.range(at: 1))
+        if let c = ch.first, let sub = Self.subscriptMap[c] {
+          result = (result as NSString).replacingCharacters(in: match.range, with: String(sub))
+        }
+      }
+    }
+
+    // Superscripts: ^{...} or ^x
+    if let supBracedRegex = try? NSRegularExpression(pattern: #"\^\{([^}]+)\}"#) {
+      let nsResult = result as NSString
+      let matches = supBracedRegex.matches(in: result, range: NSRange(location: 0, length: nsResult.length))
+      for match in matches.reversed() {
+        let inner = nsResult.substring(with: match.range(at: 1))
+        let converted = String(inner.map { Self.superscriptMap[$0] ?? $0 })
+        result = (result as NSString).replacingCharacters(in: match.range, with: converted)
+      }
+    }
+    if let supSingleRegex = try? NSRegularExpression(pattern: #"\^([0-9a-z+\-])"#) {
+      let nsResult = result as NSString
+      let matches = supSingleRegex.matches(in: result, range: NSRange(location: 0, length: nsResult.length))
+      for match in matches.reversed() {
+        let ch = nsResult.substring(with: match.range(at: 1))
+        if let c = ch.first, let sup = Self.superscriptMap[c] {
+          result = (result as NSString).replacingCharacters(in: match.range, with: String(sup))
+        }
+      }
+    }
+
+    // Function names: \sin → sin, etc.
+    for fn in ["sin", "cos", "tan", "log", "ln", "exp", "lim", "max", "min"] {
+      result = result.replacingOccurrences(of: "\\\(fn)", with: fn)
+    }
+
+    // Strip \text{...} → inner text
+    if let textRegex = try? NSRegularExpression(pattern: #"\\text\{([^}]+)\}"#) {
+      let nsResult = result as NSString
+      let matches = textRegex.matches(in: result, range: NSRange(location: 0, length: nsResult.length))
+      for match in matches.reversed() {
+        let inner = nsResult.substring(with: match.range(at: 1))
+        result = (result as NSString).replacingCharacters(in: match.range, with: inner)
+      }
+    }
+
+    // Strip \left, \right
+    result = result.replacingOccurrences(of: "\\left", with: "")
+    result = result.replacingOccurrences(of: "\\right", with: "")
+
+    return result
+  }
+
+  /// Builds a block math attributed string (centered, styled)
+  private func buildBlockMathLine(latex: String, font: UIFont) -> NSAttributedString {
+    let unicodeText = latexToUnicode(latex)
+    let mathStyle = NSMutableParagraphStyle()
+    mathStyle.alignment = .center
+    mathStyle.lineSpacing = 6
+    mathStyle.paragraphSpacing = 8
+    mathStyle.paragraphSpacingBefore = 8
+    mathStyle.lineHeightMultiple = 1.2
+
+    let mathFont = UIFont.monospacedSystemFont(ofSize: font.pointSize + 2, weight: .regular)
+    let mathColor = UIColor { tc in
+      tc.userInterfaceStyle == .dark
+        ? UIColor(red: 0.7, green: 0.55, blue: 0.9, alpha: 1.0)
+        : UIColor(red: 0.38, green: 0.27, blue: 0.53, alpha: 1.0)
+    }
+
+    let attrs: [NSAttributedString.Key: Any] = [
+      .font: mathFont,
+      .foregroundColor: mathColor,
+      .paragraphStyle: mathStyle,
+      .backgroundColor: UIColor { tc in
+        tc.userInterfaceStyle == .dark
+          ? UIColor(white: 1.0, alpha: 0.04)
+          : UIColor(red: 0.38, green: 0.27, blue: 0.53, alpha: 0.06)
+      },
+    ]
+
+    return NSAttributedString(string: unicodeText, attributes: attrs)
   }
 
   /// Builds an attributed string for a list item (bullet, checklist) with indentation.
@@ -484,12 +696,36 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
     return result
   }
 
-  /// Applies **bold** and *italic* / _italic_ inline formatting within a text string.
+  /// Applies **bold**, *italic* / _italic_, and $inline math$ formatting within a text string.
   private func applyInlineFormatting(_ text: String, baseAttributes: [NSAttributedString.Key: Any], baseFont: UIFont) -> NSAttributedString {
     let result = NSMutableAttributedString()
     var remaining = text[text.startIndex...]
 
     while !remaining.isEmpty {
+      // $inline math$ (single $, not $$)
+      if remaining.hasPrefix("$") && !remaining.hasPrefix("$$") {
+        let afterDollar = remaining.index(after: remaining.startIndex)
+        if afterDollar < remaining.endIndex {
+          if let endRange = remaining[afterDollar...].range(of: "$") {
+            let mathContent = String(remaining[afterDollar..<endRange.lowerBound])
+            // Only render as math if content is non-empty and doesn't start/end with space
+            if !mathContent.isEmpty && !mathContent.hasPrefix(" ") && !mathContent.hasSuffix(" ") {
+              let unicodeText = latexToUnicode(mathContent)
+              var mathAttrs = baseAttributes
+              let mathColor = UIColor { tc in
+                tc.userInterfaceStyle == .dark
+                  ? UIColor(red: 0.7, green: 0.55, blue: 0.9, alpha: 1.0)
+                  : UIColor(red: 0.38, green: 0.27, blue: 0.53, alpha: 1.0)
+              }
+              mathAttrs[.foregroundColor] = mathColor
+              result.append(NSAttributedString(string: unicodeText, attributes: mathAttrs))
+              remaining = remaining[remaining.index(after: endRange.lowerBound)...]
+              continue
+            }
+          }
+        }
+      }
+
       // **bold**
       if remaining.hasPrefix("**") {
         if let endRange = remaining[remaining.index(remaining.startIndex, offsetBy: 2)...].range(of: "**") {
@@ -533,12 +769,14 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
       let nextBold = remaining.range(of: "**")
       let nextStar = remaining.range(of: "*")
       let nextUnderscore = remaining.range(of: "_")
+      let nextDollar = remaining.range(of: "$")
 
       // Find the nearest marker
       var nearest = remaining.endIndex
       if let r = nextBold { nearest = min(nearest, r.lowerBound) }
       if let r = nextStar, r.lowerBound > remaining.startIndex { nearest = min(nearest, r.lowerBound) }
       if let r = nextUnderscore, r.lowerBound > remaining.startIndex { nearest = min(nearest, r.lowerBound) }
+      if let r = nextDollar, r.lowerBound > remaining.startIndex { nearest = min(nearest, r.lowerBound) }
 
       // If nearest is startIndex (current char is a marker that didn't close), consume one char
       if nearest == remaining.startIndex {

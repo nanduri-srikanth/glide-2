@@ -8,6 +8,8 @@ from app.services.llm.prompts import (
     FIELD_DEFINITIONS_FULL,
     FORMAT_SIGNALS_BLOCK,
     FORMAT_FEWSHOT_EXAMPLES,
+    MATH_NOTATION_BLOCK,
+    TECHNICAL_PRESERVATION_BLOCK,
     VOICE_AND_TONE_BLOCK,
     INTENT_CLASSIFICATION_BLOCK,
     OUTPUT_RULES,
@@ -88,6 +90,8 @@ async def synthesize_content(
         FORMAT_SIGNALS_BLOCK,
         FORMAT_FEWSHOT_EXAMPLES,
         VOICE_AND_TONE_BLOCK,
+        MATH_NOTATION_BLOCK,
+        TECHNICAL_PRESERVATION_BLOCK,
         INTENT_CLASSIFICATION_BLOCK,
         f"Return ONLY valid JSON with this exact structure:\n{json_schema}",
         "Rules:\n"
@@ -100,10 +104,14 @@ async def synthesize_content(
     context_str = build_user_context_string(user_context, folders_list)
     user_content = wrap_user_content(combined_content) + "\n" + context_str
 
+    # Scale token budget with input size — technical content needs more room
+    input_words = len(combined_content.split())
+    max_tokens = min(8000, max(3000, input_words * 3))
+
     try:
         response = client.chat.completions.create(
             model=model,
-            max_tokens=3000,
+            max_tokens=max_tokens,
             response_format={"type": "json_object"},
             messages=build_messages(system_content, user_content),
         )
@@ -177,17 +185,22 @@ async def comprehensive_synthesize(
 
     system_content = "\n\n".join([
         INJECTION_DEFENSE_INSTRUCTION,
-        f"You are re-synthesizing a note from {input_count} separate inputs. "
-        "PRESERVE ALL INFORMATION --- every detail, name, number, date, and idea. "
+        f"You are re-synthesizing a note from {input_count} separate inputs ({total_words} words total). "
+        "PRESERVE ALL INFORMATION --- every detail, name, number, date, formula, and idea. "
         "Organize by theme, maintain chronology, capture nuance.",
         FIELD_DEFINITIONS_FULL,
         FORMAT_SIGNALS_BLOCK,
         VOICE_AND_TONE_BLOCK,
+        MATH_NOTATION_BLOCK,
+        TECHNICAL_PRESERVATION_BLOCK,
         INTENT_CLASSIFICATION_BLOCK,
         f"Return ONLY valid JSON with this exact structure:\n{json_schema}",
-        "CRITICAL: The narrative must be comprehensive. If 5 items were discussed, "
-        "all 5 must appear. If reasoning was given, include the reasoning. "
-        "DO NOT summarize away important details.",
+        "CRITICAL PRESERVATION RULES:\n"
+        "1. The narrative must be comprehensive --- LONGER or equal to the combined inputs.\n"
+        "2. If 5 items were discussed, all 5 must appear. If reasoning was given, include the reasoning.\n"
+        "3. DO NOT summarize away details. DO NOT paraphrase formulas into prose.\n"
+        "4. Every equation, derivation step, definition, and aside must be preserved.\n"
+        "5. When in doubt, include MORE content, not less.",
     ])
 
     context_str = build_user_context_string(user_context, folders_list)
@@ -197,10 +210,14 @@ async def comprehensive_synthesize(
         + "\n" + context_str
     )
 
+    # Scale token budget generously — comprehensive mode must not truncate content
+    # Technical content expands when formatted (headers, math delimiters, structure)
+    max_tokens = min(8000, max(4000, total_words * 4))
+
     try:
         response = client.chat.completions.create(
             model=model,
-            max_tokens=4000,
+            max_tokens=max_tokens,
             response_format={"type": "json_object"},
             messages=build_messages(system_content, user_content),
         )

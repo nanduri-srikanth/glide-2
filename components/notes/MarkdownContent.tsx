@@ -1,17 +1,108 @@
-import React from 'react';
-import { StyleSheet } from 'react-native';
+import React, { useMemo } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 import { NotesColors } from '@/constants/theme';
+import { parseMathSpans, containsMath } from '@/lib/math';
+import { MathSpan } from './MathSpan';
 
 interface MarkdownContentProps {
   content: string;
 }
 
+/**
+ * Pre-processes markdown to extract block-math ($$...$$) sections.
+ * Block math is split out into separate render passes; inline math ($...$)
+ * is handled by a custom `code_inline` rule override below.
+ *
+ * Returns an array of { type: 'markdown' | 'block-math', content: string }.
+ */
+function splitBlockMath(text: string): Array<{ type: 'markdown' | 'block-math'; content: string }> {
+  const parts: Array<{ type: 'markdown' | 'block-math'; content: string }> = [];
+  const blockRegex = /\$\$([\s\S]+?)\$\$/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = blockRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push({ type: 'markdown', content: text.slice(lastIndex, match.index) });
+    }
+    parts.push({ type: 'block-math', content: match[1].trim() });
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push({ type: 'markdown', content: text.slice(lastIndex) });
+  }
+
+  return parts;
+}
+
+/**
+ * For markdown sections, replace inline math ($...$) with code backticks
+ * so the markdown renderer picks them up via `code_inline`, which we
+ * override to render as math.
+ *
+ * We use a unique prefix so we can distinguish math code from regular code:
+ * `$MATH:...` — the MathCodeInline renderer strips this prefix.
+ */
+function convertInlineMathToCode(md: string): string {
+  // Match $...$ but not $$
+  return md.replace(/(?<!\$)\$([^\s$][^$]*?[^\s$])\$(?!\$)|\$([^\s$])\$(?!\$)/g, (_m, multi, single) => {
+    const latex = multi !== undefined ? multi : single;
+    return '`$MATH:' + latex + '`';
+  });
+}
+
 export function MarkdownContent({ content }: MarkdownContentProps) {
+  const hasMath = useMemo(() => containsMath(content), [content]);
+
+  // Fast path: no math → render directly
+  if (!hasMath) {
+    return (
+      <Markdown style={markdownStyles}>
+        {content}
+      </Markdown>
+    );
+  }
+
+  // Split block math out, handle inline math via code override
+  const parts = splitBlockMath(content);
+
   return (
-    <Markdown style={markdownStyles}>
-      {content}
-    </Markdown>
+    <View>
+      {parts.map((part, i) => {
+        if (part.type === 'block-math') {
+          return <MathSpan key={i} latex={part.content} type="block-math" />;
+        }
+
+        const processed = convertInlineMathToCode(part.content);
+        return (
+          <Markdown
+            key={i}
+            style={markdownStyles}
+            rules={{
+              code_inline: (node: any, children: any, parent: any, styles: any) => {
+                const text: string = node.content || '';
+                if (text.startsWith('$MATH:')) {
+                  const latex = text.slice(6);
+                  return (
+                    <MathSpan key={node.key} latex={latex} type="inline-math" />
+                  );
+                }
+                // Regular inline code
+                return (
+                  <Text key={node.key} style={styles.code_inline}>
+                    {text}
+                  </Text>
+                );
+              },
+            }}
+          >
+            {processed}
+          </Markdown>
+        );
+      })}
+    </View>
   );
 }
 

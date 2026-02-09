@@ -139,7 +139,41 @@ Level up your planning system using Google Calendar to optimize time and take co
 6. Use one to two hour gaps as focus blocks for real results
 
 ## Outcome
-You'll gain a clear overview of your week and understand how you're spending your time."""
+You'll gain a clear overview of your week and understand how you're spending your time.
+
+**Example 7 --- Physics / technical notes with formulas**
+Input: "Newton's second law, F net equals ma, that's the big one. Free body diagrams: draw the object as a dot, draw ALL forces. Gravity is mg downward. Normal force N perpendicular to surface. On an incline, tilt your axes. x along the slope, y perpendicular. Then F gx is mg sin theta, F gy is mg cos theta. So normal force equals mg cos theta because a y is zero. Net force along slope is mg sin theta minus friction. Kinetic friction is mu k times N, so mu k times mg cos theta. Final equation: mg sin theta minus mu k mg cos theta equals ma."
+format_signals: {has_discrete_items: true, has_sequential_steps: true, has_action_items: false, is_reflective: false, topic_count: 2, tone: "casual"}
+format_recipe: "header_sections + numbered_list + bullet_list"
+Output:
+## Newton's 2nd Law
+
+$$F_{net} = ma$$
+
+The most important of the three laws.
+
+## Free Body Diagrams (FBDs)
+
+1. Draw the object as a dot
+2. Draw ALL forces acting ON it:
+   - **Gravity** ($F_g$ or $mg$) --- always down
+   - **Normal Force** ($N$) --- perpendicular to the surface
+   - **Tension** ($T$) --- along the rope/string
+   - **Friction** ($f$) --- opposite to motion or potential motion
+
+## Inclined Plane Problem
+
+Tilt axes: x-axis parallel to slope, y-axis perpendicular.
+
+- $F_{gx} = mg \\sin\\theta$ (pulls it down the slope)
+- $F_{gy} = mg \\cos\\theta$ (pushes it into the slope)
+- $N = mg \\cos\\theta$ (because $a_y = 0$)
+
+Net force along slope:
+
+$$mg \\sin\\theta - \\mu_k mg \\cos\\theta = ma$$
+
+Where kinetic friction $f_k = \\mu_k N = \\mu_k mg \\cos\\theta$. Note the $m$'s cancel sometimes."""
 
 INTENT_CLASSIFICATION_BLOCK = """\
 ## ACTION EXTRACTION --- Intent-Based Classification
@@ -176,6 +210,41 @@ For each statement or thought, classify the underlying intent:
 3. Extract EVERY actionable item separately (5 items = 5 reminders)
 4. Preserve context in action titles ("Email Sarah re: Q3 deck" not just "Email Sarah")
 5. Distinguish actions from open loops --- don't create reminders for unresolved questions"""
+
+MATH_NOTATION_BLOCK = """\
+### Math & Scientific Notation
+When the content contains mathematical expressions, equations, physics formulas,
+or scientific notation, use LaTeX-style math delimiters:
+- Inline math: $expression$ (e.g., $v_0 = 5$, $F = ma$, $\\theta = 30°$)
+- Block math (for standalone equations): $$expression$$ on its own line
+- Use standard LaTeX: subscripts (_), superscripts (^), Greek letters (\\theta, \\pi),
+  fractions (\\frac{a}{b}), square roots (\\sqrt{x}), operators (\\times, \\div, \\pm)
+- Keep expressions readable: prefer $v_0$ over verbose alternatives
+- For simple quantities, plain text is fine: "5 meters", "30 degrees"
+- Only use math notation when it genuinely improves clarity"""
+
+TECHNICAL_PRESERVATION_BLOCK = """\
+### Technical & Reference Content Preservation
+When the input contains technical, scientific, or educational content:
+
+**ABSOLUTE RULES:**
+1. NEVER paraphrase, simplify, or summarize away formulas, equations, or derivations
+2. NEVER convert math notation into prose (do NOT write "F equals m times a" --- keep $F = ma$)
+3. NEVER drop intermediate steps in a derivation chain --- every step matters for understanding
+4. NEVER merge distinct concepts into a single bullet --- each concept gets its own line
+5. Preserve the user's reasoning chain: "Wait, is N always mg cosθ? Only on an incline." --- keep this
+
+**STRUCTURE RULES:**
+- Use ## headers to separate distinct topics (e.g., "## Newton's Laws", "## Free Body Diagrams")
+- Use numbered lists for sequential steps, derivations, or procedures
+- Use bullet points for parallel concepts, properties, or definitions
+- Use **bold** for defined terms and key labels (e.g., **Normal Force (N)**, **1st Law: Inertia**)
+- Use $inline math$ for all formulas, variables, and equations within text
+- Use $$block math$$ for standalone key equations that deserve emphasis
+- Preserve asides, caveats, and self-corrections --- they show understanding
+
+**The narrative output should be LONGER than or equal to the input for technical content.**
+If the input is 500 words of physics notes, the output should NOT be 200 words."""
 
 VOICE_AND_TONE_BLOCK = """\
 ### Voice & Tone
