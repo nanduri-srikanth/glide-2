@@ -347,6 +347,10 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
       width: maxWidth,
       height: size.height
     )
+
+    // Re-measure after layout so the JS side gets an accurate height.
+    // The abs() guard in emitContentSizeIfNeeded prevents infinite loops.
+    emitContentSizeIfNeeded()
   }
 
   private func updatePlaceholderVisibility() {
@@ -416,7 +420,15 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
 
   private func emitContentSizeIfNeeded() {
     guard let onContentSizeChange = onContentSizeChange else { return }
-    let height = textView.contentSize.height
+    // Need a valid width to measure text height accurately
+    guard textView.bounds.width > 0 else { return }
+    // sizeThatFits is more reliable than contentSize — it calculates the
+    // actual text layout height for the current width regardless of scroll state.
+    let fittingSize = textView.sizeThatFits(CGSize(
+      width: textView.bounds.width,
+      height: CGFloat.greatestFiniteMagnitude
+    ))
+    let height = fittingSize.height
     guard height.isFinite, height > 0 else { return }
     if abs(height - lastContentHeight) < 0.5 { return }
     lastContentHeight = height

@@ -436,16 +436,6 @@ export function RecordingOverlay({
               {/* Progress and duration */}
               <View style={styles.playbackInfoContainer}>
                 <Text style={styles.timerTextComplete}>{formatTime(duration)}</Text>
-                {isPlaybackLoaded && (
-                  <View style={styles.playbackProgressBar}>
-                    <View
-                      style={[
-                        styles.playbackProgressFill,
-                        { width: `${playbackProgress * 100}%` },
-                      ]}
-                    />
-                  </View>
-                )}
               </View>
 
               {/* Re-record button */}
@@ -768,19 +758,9 @@ const styles = StyleSheet.create({
   },
   playbackInfoContainer: {
     flex: 1,
-    gap: 6,
     minWidth: 100,
-  },
-  playbackProgressBar: {
-    height: 6,
-    backgroundColor: 'rgba(76, 175, 80, 0.25)',
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  playbackProgressFill: {
-    height: '100%',
-    backgroundColor: '#4CAF50',
-    borderRadius: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   reRecordButton: {
     padding: 10,

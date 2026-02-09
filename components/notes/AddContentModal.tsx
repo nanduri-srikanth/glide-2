@@ -85,7 +85,7 @@ function WaveBar({ delay, isActive }: { delay: number; isActive: boolean }) {
 
 // Mini waveform visualization
 function MiniWaveform({ isActive }: { isActive: boolean }) {
-  const bars = [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330, 360, 390, 420];
+  const bars = [0, 30, 60, 90, 120];
 
   return (
     <View style={styles.waveformContainer}>
@@ -122,8 +122,6 @@ export function AddContentModal({
 
   const {
     isPlaying,
-    isLoaded: isPlaybackLoaded,
-    progress: playbackProgress,
     togglePlayback,
     reset: resetPlayback,
     loadSound,
@@ -259,90 +257,92 @@ export function AddContentModal({
                 {/* Audio section */}
                 <View style={styles.audioSection}>
                   {isRecording && !isPaused ? (
-                    /* Recording in progress - show pause and stop */
-                    <View style={styles.recordingActive}>
-                      <TouchableOpacity
-                        style={styles.pauseRecordButton}
-                        onPress={pauseRecording}
-                      >
-                        <Ionicons name="pause" size={18} color="#FFFFFF" />
-                      </TouchableOpacity>
-                      <MiniWaveform isActive={true} />
-                      <Text style={styles.recordingTime}>{formatTime(duration)}</Text>
-                      <TouchableOpacity
-                        style={styles.stopRecordButton}
-                        onPress={handleStopRecording}
-                      >
-                        <View style={styles.stopIcon} />
-                      </TouchableOpacity>
+                    /* Recording in progress - match new note UI */
+                    <View style={styles.micContainer}>
+                      <View style={styles.recordingControlsContainer}>
+                        <TouchableOpacity
+                          style={styles.pauseButton}
+                          onPress={pauseRecording}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name="pause" size={24} color="#FFFFFF" />
+                        </TouchableOpacity>
+                        <View style={styles.recordingIndicator}>
+                          <MiniWaveform isActive={true} />
+                        </View>
+                        <Text style={styles.timerText}>{formatTime(duration)}</Text>
+                        <TouchableOpacity
+                          style={styles.stopButton}
+                          onPress={handleStopRecording}
+                          activeOpacity={0.7}
+                        >
+                          <View style={styles.stopIconLarge} />
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   ) : isRecording && isPaused ? (
-                    /* Recording paused - show resume and done */
-                    <View style={styles.recordingPaused}>
-                      <TouchableOpacity
-                        style={styles.resumeRecordButton}
-                        onPress={resumeRecording}
-                      >
-                        <Ionicons name="play" size={18} color="#FFFFFF" />
-                      </TouchableOpacity>
-                      <View style={styles.pausedIndicator}>
-                        <Ionicons name="pause" size={14} color={NotesColors.textSecondary} />
+                    /* Recording paused - match new note UI */
+                    <View style={styles.micContainer}>
+                      <View style={styles.recordingControlsContainer}>
+                        <TouchableOpacity
+                          style={styles.resumeButton}
+                          onPress={resumeRecording}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name="play" size={24} color="#FFFFFF" />
+                        </TouchableOpacity>
+                        <View style={styles.pausedIndicatorLarge}>
+                          <Ionicons name="pause" size={20} color={NotesColors.textSecondary} />
+                        </View>
+                        <Text style={styles.timerTextPaused}>{formatTime(duration)}</Text>
+                        <TouchableOpacity
+                          style={styles.doneButton}
+                          onPress={handleStopRecording}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name="checkmark" size={24} color="#FFFFFF" />
+                        </TouchableOpacity>
                       </View>
-                      <Text style={styles.recordingTimePaused}>{formatTime(duration)}</Text>
-                      <TouchableOpacity
-                        style={styles.doneRecordButton}
-                        onPress={handleStopRecording}
-                      >
-                        <Ionicons name="checkmark" size={18} color="#FFFFFF" />
-                      </TouchableOpacity>
                     </View>
                   ) : localRecordingUri ? (
-                    /* Has recording - with playback controls */
-                    <View style={styles.hasRecording}>
-                      <View style={styles.recordingInfo}>
+                    /* Has recording - match new note UI */
+                    <View style={styles.micContainer}>
+                      <View style={styles.recordingCompletedContainer}>
                         <TouchableOpacity
-                          style={styles.playButton}
+                          style={styles.playbackButton}
                           onPress={() => togglePlayback(localRecordingUri)}
                         >
                           <Ionicons
                             name={isPlaying ? 'pause' : 'play'}
-                            size={18}
+                            size={24}
                             color="#FFFFFF"
                           />
                         </TouchableOpacity>
-                        <View style={styles.playbackInfo}>
-                          <Text style={styles.recordingInfoText}>
-                            {formatTime(duration)} recorded
-                          </Text>
-                          {/* Playback progress bar */}
-                          {isPlaybackLoaded && (
-                            <View style={styles.progressBarSmall}>
-                              <View
-                                style={[
-                                  styles.progressFillSmall,
-                                  { width: `${playbackProgress * 100}%` },
-                                ]}
-                              />
-                            </View>
-                          )}
+                        <View style={styles.playbackInfoContainer}>
+                          <Text style={styles.timerTextComplete}>{formatTime(duration)}</Text>
                         </View>
+                        <TouchableOpacity
+                          style={styles.reRecordButton}
+                          onPress={() => {
+                            handleClearRecording();
+                            handleStartRecording();
+                          }}
+                        >
+                          <Ionicons name="refresh" size={18} color={NotesColors.textSecondary} />
+                        </TouchableOpacity>
                       </View>
-                      <TouchableOpacity
-                        style={styles.clearButton}
-                        onPress={handleClearRecording}
-                      >
-                        <Ionicons name="trash-outline" size={18} color="#FF3B30" />
-                      </TouchableOpacity>
                     </View>
                   ) : (
                     /* No recording */
-                    <TouchableOpacity
-                      style={styles.startRecordButton}
-                      onPress={handleStartRecording}
-                    >
-                      <Ionicons name="mic" size={20} color={NotesColors.textPrimary} />
-                      <Text style={styles.startRecordText}>Start Recording</Text>
-                    </TouchableOpacity>
+                    <View style={styles.micContainer}>
+                      <TouchableOpacity
+                        style={styles.micButton}
+                        onPress={handleStartRecording}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="mic" size={36} color="#FFFFFF" />
+                      </TouchableOpacity>
+                    </View>
                   )}
                 </View>
 
@@ -494,158 +494,136 @@ const styles = StyleSheet.create({
   audioSection: {
     paddingHorizontal: 16,
   },
-  recordingActive: {
-    flexDirection: 'row',
+  micContainer: {
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255, 59, 48, 0.1)',
-    borderRadius: 12,
-    padding: 12,
-    gap: 12,
   },
-  recordingPaused: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    borderRadius: 12,
-    padding: 12,
-    gap: 12,
-  },
-  pauseRecordButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: NotesColors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  resumeRecordButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#4CAF50',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stopRecordButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#FF3B30',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  doneRecordButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#4CAF50',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pausedIndicator: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 12,
-    padding: 6,
-  },
-  recordingTimePaused: {
-    fontSize: 18,
-    fontWeight: '500',
-    color: NotesColors.textSecondary,
-    fontVariant: ['tabular-nums'],
+  recordingIndicator: {
+    backgroundColor: 'rgba(255, 59, 48, 0.12)',
+    borderRadius: 24,
+    padding: 10,
   },
   waveformContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 3,
-    height: 40,
-    flex: 1,
+    height: 24,
+    width: 36,
   },
   waveBar: {
-    width: 3,
-    borderRadius: 1.5,
+    width: 4,
+    borderRadius: 2,
   },
-  recordingTime: {
-    fontSize: 20,
-    fontWeight: '300',
+  timerText: {
+    fontSize: 15,
+    fontWeight: '600',
     color: '#FF3B30',
     fontVariant: ['tabular-nums'],
-    marginHorizontal: 16,
+    minWidth: 45,
+  },
+  timerTextPaused: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: NotesColors.textSecondary,
+    fontVariant: ['tabular-nums'],
+    minWidth: 45,
+  },
+  timerTextComplete: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#4CAF50',
+    fontVariant: ['tabular-nums'],
+  },
+  recordingControlsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 59, 48, 0.1)',
+    borderRadius: 32,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    gap: 16,
+  },
+  pauseButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: NotesColors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  resumeButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#4CAF50',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   stopButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: '#FF3B30',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  stopIcon: {
-    width: 16,
-    height: 16,
-    borderRadius: 2,
-    backgroundColor: '#fff',
+  stopIconLarge: {
+    width: 18,
+    height: 18,
+    borderRadius: 3,
+    backgroundColor: '#FFFFFF',
   },
-  hasRecording: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: 'rgba(76, 175, 80, 0.1)',
-    borderRadius: 12,
-    padding: 12,
-  },
-  recordingInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    flex: 1,
-  },
-  playButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  doneButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: '#4CAF50',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  playbackInfo: {
-    flex: 1,
-    gap: 4,
+  pausedIndicatorLarge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 20,
+    padding: 10,
   },
-  recordingInfoText: {
-    fontSize: 15,
-    color: '#4CAF50',
-  },
-  progressBarSmall: {
-    height: 3,
-    backgroundColor: 'rgba(76, 175, 80, 0.2)',
-    borderRadius: 1.5,
-    overflow: 'hidden',
-    maxWidth: 120,
-  },
-  progressFillSmall: {
-    height: '100%',
-    backgroundColor: '#4CAF50',
-    borderRadius: 1.5,
-  },
-  clearButton: {
-    padding: 8,
-  },
-  startRecordButton: {
+  recordingCompletedContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    backgroundColor: 'rgba(76, 175, 80, 0.12)',
+    borderRadius: 32,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    gap: 16,
+    minWidth: 280,
+  },
+  playbackButton: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#4CAF50',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  playbackInfoContainer: {
+    flex: 1,
+    minWidth: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reRecordButton: {
+    padding: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 20,
+  },
+  micButton: {
     backgroundColor: NotesColors.primary,
-    borderRadius: 12,
-    padding: 14,
-  },
-  startRecordText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: NotesColors.textPrimary,
+    borderRadius: 40,
+    width: 80,
+    height: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   optionRow: {
     flexDirection: 'row',

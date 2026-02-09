@@ -898,9 +898,11 @@ export default function NoteDetailScreen() {
                 }
               }}
               style={styles.headerBackButton}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Back"
             >
-              <Ionicons name="chevron-back" size={28} color={NotesColors.primary} />
-              <Text style={styles.headerBackText}>Back</Text>
+              <Ionicons name="chevron-back" size={26} color={NotesColors.primary} />
             </TouchableOpacity>
           ),
           headerRight: () => (
@@ -1369,13 +1371,19 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   headerBackButton: {
-    flexDirection: 'row',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
-    marginLeft: -8,
-  },
-  headerBackText: {
-    fontSize: 17,
-    color: NotesColors.primary,
+    justifyContent: 'center',
+    backgroundColor: NotesColors.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: NotesColors.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
   },
   navBarTitle: {
     fontSize: 17,
