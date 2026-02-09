@@ -357,9 +357,12 @@ export default function NoteDetailScreen() {
       return;
     }
     setIsEditing(true);
-    // Focus title input after a brief delay
-    setTimeout(() => titleInputRef.current?.focus(), 100);
-  }, [isAuthenticated]);
+    // Prefer focusing the editor body (title can be edited explicitly by tapping it).
+    // For the non-native editor, we can focus the transcript TextInput.
+    if (!richEditorEnabled) {
+      setTimeout(() => transcriptInputRef.current?.focus(), 100);
+    }
+  }, [isAuthenticated, richEditorEnabled]);
 
   // Exit edit mode (can be called manually or on blur)
   const handleDoneEditing = useCallback(async () => {
@@ -388,13 +391,15 @@ export default function NoteDetailScreen() {
   // Handle blur - exit edit mode if neither field is focused
   const handleTitleBlur = useCallback(() => {
     setIsTitleFocused(false);
+    // Native rich editor doesn't report focus/blur into JS; avoid auto-exiting edit mode.
+    if (richEditorEnabled) return;
     // Small delay to allow focus to transfer to transcript field
     setTimeout(() => {
       if (!isTranscriptFocused) {
         handleDoneEditing();
       }
     }, 100);
-  }, [isTranscriptFocused, handleDoneEditing]);
+  }, [isTranscriptFocused, handleDoneEditing, richEditorEnabled]);
 
   const handleTranscriptBlur = useCallback(() => {
     setIsTranscriptFocused(false);
@@ -786,6 +791,7 @@ export default function NoteDetailScreen() {
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
           { useNativeDriver: false }
@@ -937,6 +943,7 @@ export default function NoteDetailScreen() {
               ref={richEditorRef}
               rtfBase64={richRtfBase64}
               initialPlaintext={richRtfBase64 ? undefined : editedTranscript}
+              autoFocus
               onChangeText={handleTranscriptChange}
               onRichSnapshot={handleRichSnapshot}
               placeholder="Start typing..."

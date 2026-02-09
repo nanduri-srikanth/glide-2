@@ -22,6 +22,7 @@ type NativeProps = ViewProps & {
   initialPlaintext?: string;
   rtfBase64?: string;
   snapshotNonce?: number;
+  autoFocus?: boolean;
   onChange?: (e: NativeChangeEvent) => void;
   onRichSnapshot?: (e: { nativeEvent: { rtfBase64: string } }) => void;
 };

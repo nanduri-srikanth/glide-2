@@ -9,6 +9,7 @@ final class GlideRichTextView: UIView, UITextViewDelegate {
   private var lastSelectedRange = NSRange(location: 0, length: 0)
   private var lastAppliedRtfBase64: String?
   private var hasAppliedInitialPlaintext = false
+  private var hasAutoFocused = false
   private var debounceTimer: Timer?
   private lazy var accessoryToolbar: UIToolbar = makeAccessoryToolbar()
 
@@ -89,6 +90,18 @@ final class GlideRichTextView: UIView, UITextViewDelegate {
     }
   }
 
+  /// Focus the editor on mount/update. Applied once per native view instance.
+  @objc var autoFocus: Bool = false {
+    didSet {
+      if !autoFocus { return }
+      if hasAutoFocused { return }
+      hasAutoFocused = true
+      DispatchQueue.main.async { [weak self] in
+        _ = self?.textView.becomeFirstResponder()
+      }
+    }
+  }
+
   /// Prop-based trigger for RTF snapshots.  Increment from JS to request a snapshot.
   /// Works through the New Architecture interop layer (commands don't).
   private var lastSnapshotNonce: Int = 0
@@ -123,9 +136,13 @@ final class GlideRichTextView: UIView, UITextViewDelegate {
     textView.backgroundColor = .clear
     textView.delegate = self
     textView.inputAccessoryView = accessoryToolbar
+    textView.isEditable = true
+    textView.isSelectable = true
     textView.isScrollEnabled = true
     textView.alwaysBounceVertical = true
-    textView.textContainerInset = UIEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
+    // Match RN screen padding; avoid double horizontal padding that makes text feel "squeezed".
+    textView.textContainerInset = UIEdgeInsets(top: 8, left: 0, bottom: 8, right: 0)
+    textView.textContainer.lineFragmentPadding = 0
     textView.adjustsFontForContentSizeCategory = true
     textView.keyboardDismissMode = .interactive
     textView.autocorrectionType = .yes
