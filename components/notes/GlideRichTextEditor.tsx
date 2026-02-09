@@ -25,6 +25,12 @@ type NativeSelectionChangeEvent = {
   };
 };
 
+type NativeContentSizeChangeEvent = {
+  nativeEvent: {
+    height: number;
+  };
+};
+
 type NativeEditTapEvent = {
   nativeEvent: {
     tapOffset: number;
@@ -47,6 +53,7 @@ type NativeProps = ViewProps & {
   onRichSnapshot?: (e: { nativeEvent: { rtfBase64: string } }) => void;
   onSelectionChange?: (e: NativeSelectionChangeEvent) => void;
   onEditTap?: (e: NativeEditTapEvent) => void;
+  onContentSizeChange?: (e: NativeContentSizeChangeEvent) => void;
 };
 
 export type GlideRichTextEditorHandle = {
@@ -54,12 +61,13 @@ export type GlideRichTextEditorHandle = {
   focus: () => void;
 };
 
-export type GlideRichTextEditorProps = Omit<NativeProps, 'onChange' | 'onRichSnapshot' | 'snapshotNonce' | 'focusNonce' | 'onSelectionChange' | 'onEditTap'> & {
+export type GlideRichTextEditorProps = Omit<NativeProps, 'onChange' | 'onRichSnapshot' | 'snapshotNonce' | 'focusNonce' | 'onSelectionChange' | 'onEditTap' | 'onContentSizeChange'> & {
   onChangeText?: (text: string) => void;
   onChange?: (e: NativeChangeEvent) => void;
   onRichSnapshot?: (rtfBase64: string) => void;
   onSelectionChange?: (e: { selectionStart: number; selectionEnd: number; caretY: number; caretHeight: number }) => void;
   onEditTap?: (e: { tapOffset: number; tapY: number }) => void;
+  onContentSizeChange?: (e: { height: number }) => void;
 };
 
 const viewManagerConfig =
@@ -72,7 +80,7 @@ const NativeGlideRichTextView =
 
 // Dev-only: warn if the native view manager is missing expected props
 if (__DEV__ && viewManagerConfig) {
-  const expectedProps = ['focusNonce', 'onSelectionChange', 'onEditTap', 'selectable'];
+  const expectedProps = ['focusNonce', 'onSelectionChange', 'onEditTap', 'onContentSizeChange', 'selectable'];
   const nativeProps = (viewManagerConfig as any).NativeProps || {};
   const missing = expectedProps.filter(p => !(p in nativeProps));
   if (missing.length > 0) {
@@ -84,7 +92,7 @@ if (__DEV__ && viewManagerConfig) {
 }
 
 export const GlideRichTextEditor = forwardRef<GlideRichTextEditorHandle, GlideRichTextEditorProps>(
-  ({ onChangeText, onChange, onRichSnapshot, onSelectionChange, onEditTap, ...props }, ref) => {
+  ({ onChangeText, onChange, onRichSnapshot, onSelectionChange, onEditTap, onContentSizeChange, ...props }, ref) => {
     const [snapshotNonce, setSnapshotNonce] = useState(0);
     const [focusNonce, setFocusNonce] = useState(0);
 
@@ -125,6 +133,13 @@ export const GlideRichTextEditor = forwardRef<GlideRichTextEditorHandle, GlideRi
       [onEditTap]
     );
 
+    const handleContentSizeChange = useCallback(
+      (e: NativeContentSizeChangeEvent) => {
+        onContentSizeChange?.({ height: e.nativeEvent.height });
+      },
+      [onContentSizeChange]
+    );
+
     // Prop-based trigger: incrementing snapshotNonce causes the native view to
     // capture an RTF snapshot and fire onRichSnapshot.  This avoids command
     // dispatch which doesn't work through the New Architecture interop layer.
@@ -163,6 +178,7 @@ export const GlideRichTextEditor = forwardRef<GlideRichTextEditorHandle, GlideRi
         onRichSnapshot={handleRichSnapshot}
         onSelectionChange={handleSelectionChange}
         onEditTap={handleEditTap}
+        onContentSizeChange={handleContentSizeChange}
       />
     );
   }

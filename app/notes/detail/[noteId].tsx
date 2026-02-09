@@ -14,7 +14,6 @@ import {
   Animated,
   KeyboardAvoidingView,
   Platform,
-  InputAccessoryView,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,7 +21,6 @@ import { NotesColors } from '@/constants/theme';
 import { getNoteById, formatDuration } from '@/data/mockNotes';
 import { FloatingActionBar, ActionCounts } from '@/components/notes/FloatingActionBar';
 import { EditableActionsPanel } from '@/components/notes/EditableActionsPanel';
-import { FormattingToolbar, FormatType } from '@/components/notes/FormattingToolbar';
 import {
   CalendarAction,
   EmailAction,
@@ -48,7 +46,6 @@ import { richContentRepository, noteVersionsRepository } from '@/lib/repositorie
 import { DiffReviewModal } from '@/components/notes/DiffReviewModal';
 import { historyService, type SynthesizeResponse } from '@/services/history';
 
-const INPUT_ACCESSORY_ID = 'note-formatting-toolbar';
 
 // Convert mock note actions to server action format for the useActionDrafts hook
 function convertMockActionsToServerFormat(actions: NoteActions | undefined) {
@@ -209,6 +206,7 @@ export default function NoteDetailScreen() {
   const scrollViewRef = useRef<any>(null);
   const [scrollViewHeight, setScrollViewHeight] = useState(0);
   const [editorTopY, setEditorTopY] = useState(0);
+  const [richEditorHeight, setRichEditorHeight] = useState(300);
   const lastScrollTimeRef = useRef(0);
   const lastSelectionRef = useRef(0);
 
@@ -413,6 +411,11 @@ export default function NoteDetailScreen() {
       scrollViewRef.current?.scrollTo({ y: targetScrollY, animated: true });
     }
   }, [isEditing, keyboardHeight, scrollViewHeight, editorTopY]);
+
+  const handleContentSizeChange = useCallback((e: { height: number }) => {
+    const next = Math.max(300, Math.ceil(e.height));
+    setRichEditorHeight(prev => (prev === next ? prev : next));
+  }, []);
 
   // Enter edit mode
   const handleEdit = useCallback(() => {
@@ -882,7 +885,10 @@ export default function NoteDetailScreen() {
           ),
           headerLeft: () => (
             <TouchableOpacity
-              onPress={() => {
+              onPress={async () => {
+                if (isEditing) {
+                  await handleDoneEditing();
+                }
                 if (router.canDismiss()) {
                   router.dismiss();
                 } else if (router.canGoBack()) {
@@ -898,15 +904,9 @@ export default function NoteDetailScreen() {
             </TouchableOpacity>
           ),
           headerRight: () => (
-            isEditing ? (
-              <TouchableOpacity onPress={handleDoneEditing} style={styles.headerButton}>
-                <Text style={styles.doneButtonText}>Done</Text>
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity onPress={() => setShowOptionsMenu(true)} style={styles.headerButton}>
-                <Ionicons name="ellipsis-vertical" size={24} color={NotesColors.primary} />
-              </TouchableOpacity>
-            )
+            <TouchableOpacity onPress={() => setShowOptionsMenu(true)} style={styles.headerButton}>
+              <Ionicons name="ellipsis-vertical" size={24} color={NotesColors.primary} />
+            </TouchableOpacity>
           ),
         }}
       />
@@ -963,7 +963,6 @@ export default function NoteDetailScreen() {
               multiline
               blurOnSubmit
               returnKeyType="done"
-              inputAccessoryViewID={richEditorEnabled ? undefined : INPUT_ACCESSORY_ID}
             />
           ) : (
             <Animated.View style={{
@@ -1142,8 +1141,9 @@ export default function NoteDetailScreen() {
               onChangeText={handleTranscriptChange}
               onRichSnapshot={handleRichSnapshot}
               onSelectionChange={handleSelectionChange}
+              onContentSizeChange={handleContentSizeChange}
               placeholder="Start typing..."
-              style={styles.richEditor}
+              style={[styles.richEditor, { height: richEditorHeight }]}
               {...({ onEditTap: handleEditTap } as any)}
             />
           </View>
@@ -1161,7 +1161,6 @@ export default function NoteDetailScreen() {
               placeholderTextColor={NotesColors.textSecondary}
               multiline
               textAlignVertical="top"
-              inputAccessoryViewID={INPUT_ACCESSORY_ID}
             />
           ) : (
             <TouchableOpacity onPress={handleEdit} activeOpacity={0.7}>
@@ -1171,16 +1170,6 @@ export default function NoteDetailScreen() {
         )}
       </Animated.ScrollView>
 
-      {/* Formatting Toolbar - appears above keyboard (hidden when native rich editor is active) */}
-      {Platform.OS === 'ios' && !richEditorEnabled && (
-        <InputAccessoryView nativeID={INPUT_ACCESSORY_ID}>
-          <FormattingToolbar
-            inputRef={transcriptInputRef}
-            onFormat={handleFormat}
-            onRecordingComplete={handleToolbarRecordingComplete}
-          />
-        </InputAccessoryView>
-      )}
 
       {/* Floating Mic Button - hidden when keyboard is visible */}
       {!isKeyboardVisible && (
@@ -1398,11 +1387,6 @@ const styles = StyleSheet.create({
   headerRightContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  doneButtonText: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: NotesColors.primary,
   },
   savingIndicator: {
     flexDirection: 'row',

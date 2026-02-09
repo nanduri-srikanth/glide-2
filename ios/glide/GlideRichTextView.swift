@@ -69,7 +69,7 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
   private var hasAutoFocused = false
   private var debounceTimer: Timer?
   private var tapToEditRecognizer: UITapGestureRecognizer?
-  private lazy var accessoryToolbar: UIToolbar = makeAccessoryToolbar()
+  private var lastContentHeight: CGFloat = 0
 
   // MARK: - React Props
 
@@ -83,6 +83,7 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
       textView.text = next
       isApplyingContentFromJS = false
       updatePlaceholderVisibility()
+      emitContentSizeIfNeeded()
     }
   }
 
@@ -131,6 +132,7 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
         lastSelectedRange = end
         isApplyingContentFromJS = false
         updatePlaceholderVisibility()
+        emitContentSizeIfNeeded()
       } catch {
 #if DEBUG
         print("[GlideRichTextView] Failed to parse RTF: \(error)")
@@ -158,6 +160,7 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
       }
       isApplyingContentFromJS = false
       updatePlaceholderVisibility()
+      emitContentSizeIfNeeded()
 #if DEBUG
       print("[GlideRichTextView] Applied initialPlaintext (\(next.count) chars)")
 #endif
@@ -206,9 +209,7 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
   @objc var editable: Bool = true {
     didSet {
       textView.isEditable = editable
-      // Hide/show the formatting toolbar when toggling editability
-      textView.inputAccessoryView = editable ? accessoryToolbar : nil
-      // Reloading inputAccessoryView requires resigning/becoming first responder
+      // No accessory toolbar; selection menu handles formatting.
       if textView.isFirstResponder {
         textView.reloadInputViews()
       }
@@ -232,6 +233,7 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
   @objc var onEditTap: RCTDirectEventBlock?
   @objc var onRichSnapshot: RCTBubblingEventBlock?
   @objc var onSelectionChange: RCTDirectEventBlock?
+  @objc var onContentSizeChange: RCTDirectEventBlock?
 
   // MARK: - Init
 
@@ -250,7 +252,7 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
 
     textView.backgroundColor = .clear
     textView.delegate = self
-    textView.inputAccessoryView = accessoryToolbar
+    textView.inputAccessoryView = nil
     textView.isEditable = true
     textView.isSelectable = true
     textView.isScrollEnabled = true
@@ -325,22 +327,6 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
     return style
   }
 
-  private func makeAccessoryToolbar() -> UIToolbar {
-    let toolbar = UIToolbar()
-    toolbar.isTranslucent = true
-
-    let bold = UIBarButtonItem(title: "B", style: .plain, target: self, action: #selector(handleBold))
-    let italic = UIBarButtonItem(title: "I", style: .plain, target: self, action: #selector(handleItalic))
-    let underline = UIBarButtonItem(title: "U", style: .plain, target: self, action: #selector(handleUnderline))
-    let strike = UIBarButtonItem(title: "S", style: .plain, target: self, action: #selector(handleStrikethrough))
-    let highlight = UIBarButtonItem(title: "H", style: .plain, target: self, action: #selector(handleHighlight))
-
-    let spacer = UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil)
-    toolbar.items = [bold, spacer, italic, spacer, underline, spacer, strike, spacer, highlight]
-    toolbar.sizeToFit()
-    return toolbar
-  }
-
   @objc private func handleBold() { toggleBold() }
   @objc private func handleItalic() { toggleItalic() }
   @objc private func handleUnderline() { toggleUnderline() }
@@ -371,6 +357,7 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
 
   func textViewDidChange(_ textView: UITextView) {
     updatePlaceholderVisibility()
+    emitContentSizeIfNeeded()
 
     if isApplyingContentFromJS { return }
 
@@ -427,6 +414,17 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
     textViewDidChangeSelection(textView)
   }
 
+  private func emitContentSizeIfNeeded() {
+    guard let onContentSizeChange = onContentSizeChange else { return }
+    let height = textView.contentSize.height
+    guard height.isFinite, height > 0 else { return }
+    if abs(height - lastContentHeight) < 0.5 { return }
+    lastContentHeight = height
+    onContentSizeChange([
+      "height": height,
+    ])
+  }
+
   // MARK: - Snapshot Methods
 
   /// Converts the current attributedText to base64-encoded RTF and fires the onRichSnapshot event.
@@ -461,7 +459,7 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
   // MARK: - Formatting Commands
 
   private func prepareForFormatting() {
-    // React Native toolbar taps can cause the UITextView to lose focus and collapse selection.
+    // Formatting actions can cause the UITextView to lose focus and collapse selection.
     // Restore the last known selection and ensure we are first responder before applying attributes.
     _ = textView.becomeFirstResponder()
     if lastSelectedRange.location != NSNotFound {

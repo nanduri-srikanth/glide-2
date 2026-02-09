@@ -18,6 +18,7 @@ RCT_EXPORT_VIEW_PROPERTY(onChange, RCTBubblingEventBlock)
 RCT_EXPORT_VIEW_PROPERTY(onEditTap, RCTDirectEventBlock)
 RCT_EXPORT_VIEW_PROPERTY(onRichSnapshot, RCTBubblingEventBlock)
 RCT_EXPORT_VIEW_PROPERTY(onSelectionChange, RCTDirectEventBlock)
+RCT_EXPORT_VIEW_PROPERTY(onContentSizeChange, RCTDirectEventBlock)
 
 // Commands
 RCT_EXTERN_METHOD(toggleBold:(nonnull NSNumber *)reactTag)
