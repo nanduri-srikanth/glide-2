@@ -491,6 +491,7 @@ export default function NoteDetailScreen() {
   // Rich editor: persist RTF snapshot when received from native side
   const handleRichSnapshot = useCallback((rtfBase64: string) => {
     if (!noteId) return;
+    setRichRtfBase64(rtfBase64);
     richContentRepository.save(noteId, rtfBase64, editedTranscript).catch(console.warn);
   }, [noteId, editedTranscript]);
 
@@ -1136,7 +1137,7 @@ export default function NoteDetailScreen() {
             <GlideRichTextEditor
               ref={richEditorRef}
               rtfBase64={richRtfBase64}
-              initialPlaintext={richRtfBase64 ? undefined : editedTranscript}
+              initialMarkdown={richRtfBase64 ? undefined : editedTranscript}
               editable={isEditing}
               scrollEnabled={false}
               selectable={true}

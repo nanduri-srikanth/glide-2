@@ -167,6 +167,33 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
     }
   }
 
+  /// Sets initial content from markdown syntax, parsed into NSAttributedString.
+  /// Applied only once (reuses hasAppliedInitialPlaintext guard).
+  /// After rendering, auto-snapshots RTF so it persists for future opens.
+  @objc var initialMarkdown: NSString = "" {
+    didSet {
+      let next = initialMarkdown as String
+      if next.isEmpty { return }
+      if hasAppliedInitialPlaintext { return }
+
+      hasAppliedInitialPlaintext = true
+      isApplyingContentFromJS = true
+      let attributed = parseMarkdownToAttributedString(next)
+      textView.attributedText = attributed
+      isApplyingContentFromJS = false
+      updatePlaceholderVisibility()
+      emitContentSizeIfNeeded()
+#if DEBUG
+      print("[GlideRichTextView] Applied initialMarkdown (\(next.count) chars)")
+#endif
+
+      // Auto-snapshot so RTF is persisted for future opens
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+        self?.requestRtfSnapshot()
+      }
+    }
+  }
+
   /// Focus the editor on mount/update. Applied once per native view instance.
   @objc var autoFocus: Bool = false {
     didSet {
@@ -315,6 +342,179 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
       "tapOffset": offset,
       "tapY": point.y,
     ])
+  }
+
+  // MARK: - Markdown Parser
+
+  /// Parses LLM-produced markdown into NSAttributedString with proper formatting.
+  /// Supports: ## headers, - bullets, - [ ] / - [x] checklists, **bold**, _italic_ / *italic*
+  private func parseMarkdownToAttributedString(_ markdown: String) -> NSAttributedString {
+    let result = NSMutableAttributedString()
+    let bodyFont = UIFont.preferredFont(forTextStyle: .body)
+    let headlineFont = UIFont.preferredFont(forTextStyle: .headline)
+    let textColor = UIColor.label
+    let lines = markdown.components(separatedBy: "\n")
+
+    for (index, line) in lines.enumerated() {
+      let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+      if index > 0 {
+        result.append(NSAttributedString(string: "\n"))
+      }
+
+      // Skip empty lines (they create paragraph spacing naturally)
+      if trimmed.isEmpty {
+        continue
+      }
+
+      // ## Header
+      if trimmed.hasPrefix("## ") {
+        let headerText = String(trimmed.dropFirst(3))
+        let headerStyle = NSMutableParagraphStyle()
+        headerStyle.lineSpacing = 4
+        headerStyle.paragraphSpacingBefore = index > 0 ? 12 : 0
+        headerStyle.paragraphSpacing = 4
+        headerStyle.lineHeightMultiple = 1.15
+
+        let boldHeadline = fontBySettingTrait(font: headlineFont, trait: .traitBold, enabled: true)
+        let attrs: [NSAttributedString.Key: Any] = [
+          .font: boldHeadline,
+          .foregroundColor: textColor,
+          .paragraphStyle: headerStyle,
+        ]
+        let attrLine = applyInlineFormatting(headerText, baseAttributes: attrs, baseFont: boldHeadline)
+        result.append(attrLine)
+        continue
+      }
+
+      // - [ ] Unchecked checklist item
+      if trimmed.hasPrefix("- [ ] ") {
+        let itemText = String(trimmed.dropFirst(6))
+        let lineAttr = buildListLine(prefix: "\u{2610}  ", text: itemText, font: bodyFont, color: textColor)
+        result.append(lineAttr)
+        continue
+      }
+
+      // - [x] Checked checklist item
+      if trimmed.hasPrefix("- [x] ") || trimmed.hasPrefix("- [X] ") {
+        let itemText = String(trimmed.dropFirst(6))
+        let lineAttr = buildListLine(prefix: "\u{2611}  ", text: itemText, font: bodyFont, color: textColor)
+        result.append(lineAttr)
+        continue
+      }
+
+      // - Bullet item
+      if trimmed.hasPrefix("- ") {
+        let itemText = String(trimmed.dropFirst(2))
+        let lineAttr = buildListLine(prefix: "\u{2022}  ", text: itemText, font: bodyFont, color: textColor)
+        result.append(lineAttr)
+        continue
+      }
+
+      // Plain text / prose paragraph
+      let paraStyle = defaultParagraphStyle()
+      let attrs: [NSAttributedString.Key: Any] = [
+        .font: bodyFont,
+        .foregroundColor: textColor,
+        .paragraphStyle: paraStyle,
+      ]
+      let attrLine = applyInlineFormatting(trimmed, baseAttributes: attrs, baseFont: bodyFont)
+      result.append(attrLine)
+    }
+
+    return result
+  }
+
+  /// Builds an attributed string for a list item (bullet, checklist) with indentation.
+  private func buildListLine(prefix: String, text: String, font: UIFont, color: UIColor) -> NSAttributedString {
+    let listStyle = NSMutableParagraphStyle()
+    listStyle.lineSpacing = 4
+    listStyle.paragraphSpacing = 4
+    listStyle.lineHeightMultiple = 1.15
+    listStyle.headIndent = 24
+    listStyle.firstLineHeadIndent = 8
+
+    let attrs: [NSAttributedString.Key: Any] = [
+      .font: font,
+      .foregroundColor: color,
+      .paragraphStyle: listStyle,
+    ]
+
+    let result = NSMutableAttributedString(string: prefix, attributes: attrs)
+    let textPart = applyInlineFormatting(text, baseAttributes: attrs, baseFont: font)
+    result.append(textPart)
+    return result
+  }
+
+  /// Applies **bold** and *italic* / _italic_ inline formatting within a text string.
+  private func applyInlineFormatting(_ text: String, baseAttributes: [NSAttributedString.Key: Any], baseFont: UIFont) -> NSAttributedString {
+    let result = NSMutableAttributedString()
+    var remaining = text[text.startIndex...]
+
+    while !remaining.isEmpty {
+      // **bold**
+      if remaining.hasPrefix("**") {
+        if let endRange = remaining[remaining.index(remaining.startIndex, offsetBy: 2)...].range(of: "**") {
+          let boldStart = remaining.index(remaining.startIndex, offsetBy: 2)
+          let boldText = String(remaining[boldStart..<endRange.lowerBound])
+          var boldAttrs = baseAttributes
+          boldAttrs[.font] = fontBySettingTrait(font: baseFont, trait: .traitBold, enabled: true)
+          result.append(NSAttributedString(string: boldText, attributes: boldAttrs))
+          remaining = remaining[endRange.upperBound...]
+          continue
+        }
+      }
+
+      // *italic* (single asterisk, but not **)
+      if remaining.hasPrefix("*") && !remaining.hasPrefix("**") {
+        if let endRange = remaining[remaining.index(after: remaining.startIndex)...].range(of: "*") {
+          let italicStart = remaining.index(after: remaining.startIndex)
+          let italicText = String(remaining[italicStart..<endRange.lowerBound])
+          var italicAttrs = baseAttributes
+          italicAttrs[.font] = fontBySettingTrait(font: baseFont, trait: .traitItalic, enabled: true)
+          result.append(NSAttributedString(string: italicText, attributes: italicAttrs))
+          remaining = remaining[endRange.upperBound...]
+          continue
+        }
+      }
+
+      // _italic_
+      if remaining.hasPrefix("_") {
+        if let endRange = remaining[remaining.index(after: remaining.startIndex)...].range(of: "_") {
+          let italicStart = remaining.index(after: remaining.startIndex)
+          let italicText = String(remaining[italicStart..<endRange.lowerBound])
+          var italicAttrs = baseAttributes
+          italicAttrs[.font] = fontBySettingTrait(font: baseFont, trait: .traitItalic, enabled: true)
+          result.append(NSAttributedString(string: italicText, attributes: italicAttrs))
+          remaining = remaining[endRange.upperBound...]
+          continue
+        }
+      }
+
+      // Regular character — accumulate until next marker
+      let nextBold = remaining.range(of: "**")
+      let nextStar = remaining.range(of: "*")
+      let nextUnderscore = remaining.range(of: "_")
+
+      // Find the nearest marker
+      var nearest = remaining.endIndex
+      if let r = nextBold { nearest = min(nearest, r.lowerBound) }
+      if let r = nextStar, r.lowerBound > remaining.startIndex { nearest = min(nearest, r.lowerBound) }
+      if let r = nextUnderscore, r.lowerBound > remaining.startIndex { nearest = min(nearest, r.lowerBound) }
+
+      // If nearest is startIndex (current char is a marker that didn't close), consume one char
+      if nearest == remaining.startIndex {
+        let ch = String(remaining[remaining.startIndex])
+        result.append(NSAttributedString(string: ch, attributes: baseAttributes))
+        remaining = remaining[remaining.index(after: remaining.startIndex)...]
+      } else {
+        let plain = String(remaining[remaining.startIndex..<nearest])
+        result.append(NSAttributedString(string: plain, attributes: baseAttributes))
+        remaining = remaining[nearest...]
+      }
+    }
+
+    return result
   }
 
   /// Shared paragraph style used for both typing and loaded content.

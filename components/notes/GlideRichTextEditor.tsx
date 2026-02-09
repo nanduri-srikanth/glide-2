@@ -42,6 +42,7 @@ type NativeProps = ViewProps & {
   content?: string;
   placeholder?: string;
   initialPlaintext?: string;
+  initialMarkdown?: string;
   rtfBase64?: string;
   snapshotNonce?: number;
   autoFocus?: boolean;
@@ -80,7 +81,7 @@ const NativeGlideRichTextView =
 
 // Dev-only: warn if the native view manager is missing expected props
 if (__DEV__ && viewManagerConfig) {
-  const expectedProps = ['focusNonce', 'onSelectionChange', 'onEditTap', 'onContentSizeChange', 'selectable'];
+  const expectedProps = ['focusNonce', 'onSelectionChange', 'onEditTap', 'onContentSizeChange', 'selectable', 'initialMarkdown'];
   const nativeProps = (viewManagerConfig as any).NativeProps || {};
   const missing = expectedProps.filter(p => !(p in nativeProps));
   if (missing.length > 0) {
