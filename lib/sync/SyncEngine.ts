@@ -1,7 +1,7 @@
 import { notesService, type NoteFilters, type NoteListResponse } from '@/services/notes';
 import { notesRepository, foldersRepository } from '../repositories';
 import { syncQueueService, type QueueItem, type EntityType } from './SyncQueue';
-import { getQueryClient } from '../queryClient';
+import { getQueryClient, queryKeys } from '../queryClient';
 
 type SyncListener = (status: SyncStatus) => void;
 
@@ -20,6 +20,20 @@ class SyncEngine {
   private listeners: Set<SyncListener> = new Set();
   private syncInterval: ReturnType<typeof setInterval> | null = null;
   private userId: string | null = null;
+
+  /**
+   * Push the latest SQLite-derived folders tree (including note counts) into the query cache.
+   * This avoids invalidate/refetch loops while still reflecting background sync results in the UI.
+   */
+  private async publishFoldersToQueryCache(userId: string): Promise<void> {
+    try {
+      const queryClient = getQueryClient();
+      const localFolders = await foldersRepository.list(userId);
+      queryClient.setQueryData(queryKeys.folders.list(), localFolders);
+    } catch (error) {
+      console.warn('[SyncEngine] Failed to publish folders to query cache:', error);
+    }
+  }
 
   /**
    * Initialize the sync engine with user context
@@ -270,7 +284,9 @@ class SyncEngine {
     }
 
     try {
-      const fetchAllPages = async (fetchPage: (page: number) => Promise<{ data?: NoteListResponse; error?: string }>) => {
+      const fetchAllPages = async (
+        fetchPage: (page: number) => Promise<{ data?: NoteListResponse; error?: string }>
+      ) => {
         let page = 1;
         let pages = 1;
         const allItems: NoteListResponse['items'] = [];
@@ -285,14 +301,15 @@ class SyncEngine {
           page += 1;
         }
 
-        return { data: { items: allItems } as Pick<NoteListResponse, 'items'> };
+        // We fetched every page, so treat this as a complete snapshot.
+        return { data: { items: allItems, pages: 1 } as Pick<NoteListResponse, 'items' | 'pages'> };
       };
 
       const result = filters.folder_id
           ? await fetchAllPages((page) => notesService.listNotes({ ...filters, page, per_page: 100 }))
           : await fetchAllPages((page) => notesService.listAllNotes(page, 100));
 
-      const { data, error } = result as { data?: Pick<NoteListResponse, 'items'>; error?: string };
+      const { data, error } = result as { data?: Pick<NoteListResponse, 'items' | 'pages'>; error?: string };
 
       if (error) {
         console.error('[SyncEngine] Failed to fetch notes:', error);
@@ -320,6 +337,17 @@ class SyncEngine {
             }
           }
         }
+
+        // If we fetched a complete snapshot (single page) with no folder filter,
+        // prune local notes that no longer exist on the server.
+        if (!filters.folder_id && (data.pages ?? 1) <= 1) {
+          const serverIds = data.items.map((n) => n.id);
+          await notesRepository.pruneMissingFromServer(serverIds, userId);
+        }
+
+        // Notes changes can affect folder note counts (especially "All Notes").
+        // Publish updated folder tree to the cache so the folders screen updates immediately.
+        await this.publishFoldersToQueryCache(userId);
 
         // Only invalidate cache if explicitly requested
         // This prevents race conditions with optimistic updates
@@ -353,7 +381,17 @@ class SyncEngine {
       }
 
       if (data) {
-        await foldersRepository.bulkUpsert(data, userId);
+        await foldersRepository.reconcileFromServer(data, userId);
+        await this.publishFoldersToQueryCache(userId);
+
+        // Folder counts (especially "All Notes") depend on the local notes table.
+        // If server data was wiped/deleted out-of-band, we need to prune local notes too;
+        // otherwise "All Notes" will still show the old total.
+        if (!invalidateCache) {
+          this.syncNotes({}, false).catch((e) => {
+            console.warn('[SyncEngine] Follow-up notes sync failed:', e);
+          });
+        }
 
         // Only invalidate cache if explicitly requested
         if (invalidateCache) {

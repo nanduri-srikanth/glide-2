@@ -14,6 +14,24 @@ const NAVIGATION_STATE_KEY = 'glide_last_route';
 
 WebBrowser.maybeCompleteAuthSession();
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
+
 // DEV MODE: Auto-login with test credentials for faster development
 // This bypasses the login screen during development to speed up testing
 //
@@ -61,8 +79,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const checkAuth = async (): Promise<(() => void) | null> => {
+    const timeoutMs = __DEV__ ? 4000 : 8000;
     try {
-      const { data } = await supabase.auth.getSession();
+      const { data } = await withTimeout(supabase.auth.getSession(), timeoutMs, 'supabase.auth.getSession');
       const sessionUser = data.session?.user ?? null;
       if (sessionUser) {
         setUser({
@@ -70,7 +89,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           email: sessionUser.email ?? null,
           full_name: sessionUser.user_metadata?.full_name ?? null,
         });
-        await setupUserDefaults();
+        // Don't block app startup on backend calls.
+        setupUserDefaults().catch((err) => console.log('Default folders setup:', err));
       } else if (DEV_AUTO_LOGIN) {
         const result = await login(DEV_TEST_EMAIL, DEV_TEST_PASSWORD);
         if (!result.success) {
@@ -114,7 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return { success: false, error: error.message };
-    await setupUserDefaults();
+    setupUserDefaults().catch((err) => console.log('Default folders setup:', err));
     return { success: true };
   };
 
@@ -125,7 +145,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       options: { data: { full_name: fullName } },
     });
     if (error) return { success: false, error: error.message };
-    await setupUserDefaults();
+    setupUserDefaults().catch((err) => console.log('Default folders setup:', err));
     return { success: true };
   };
 
@@ -160,7 +180,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(result.url);
     if (exchangeError) return { success: false, error: exchangeError.message };
 
-    await setupUserDefaults();
+    setupUserDefaults().catch((err) => console.log('Default folders setup:', err));
     return { success: true };
   };
 

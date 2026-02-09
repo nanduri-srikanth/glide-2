@@ -24,6 +24,9 @@
 		E1F4D5FE0245411E80B57DA8 /* View+applyWidgetURL.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3449F196E444EBBB200335E /* View+applyWidgetURL.swift */; };
 		EAE40244966C401DAA57AF6B /* Image+dynamic.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6B67ACB7A644416BCE8296B /* Image+dynamic.swift */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
+		F1B0A0012D7A8F5A00A1B2C3 /* GlideRichTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B0A0002D7A8F5A00A1B2C3 /* GlideRichTextView.swift */; };
+		F1B0A0032D7A8F5A00A1B2C3 /* GlideRichTextViewManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B0A0022D7A8F5A00A1B2C3 /* GlideRichTextViewManager.swift */; };
+		F1B0A0052D7A8F5A00A1B2C3 /* GlideRichTextViewManager.m in Sources */ = {isa = PBXBuildFile; fileRef = F1B0A0042D7A8F5A00A1B2C3 /* GlideRichTextViewManager.m */; };
 		F3C9801DFB6645C481EEBECA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 77BBFBF453B34425BF4D4793 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -77,6 +80,9 @@
 		E0E7795BDE13414797EE0944 /* Date+toTimerInterval.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = "Date+toTimerInterval.swift"; path = "Date+toTimerInterval.swift"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = glide/AppDelegate.swift; sourceTree = "<group>"; };
+		F1B0A0002D7A8F5A00A1B2C3 /* GlideRichTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GlideRichTextView.swift; path = glide/GlideRichTextView.swift; sourceTree = "<group>"; };
+		F1B0A0022D7A8F5A00A1B2C3 /* GlideRichTextViewManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GlideRichTextViewManager.swift; path = glide/GlideRichTextViewManager.swift; sourceTree = "<group>"; };
+		F1B0A0042D7A8F5A00A1B2C3 /* GlideRichTextViewManager.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = GlideRichTextViewManager.m; path = glide/GlideRichTextViewManager.m; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* glide-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "glide-Bridging-Header.h"; path = "glide/glide-Bridging-Header.h"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -103,6 +109,9 @@
 			isa = PBXGroup;
 			children = (
 				F11748412D0307B40044C1D9 /* AppDelegate.swift */,
+				F1B0A0002D7A8F5A00A1B2C3 /* GlideRichTextView.swift */,
+				F1B0A0022D7A8F5A00A1B2C3 /* GlideRichTextViewManager.swift */,
+				F1B0A0042D7A8F5A00A1B2C3 /* GlideRichTextViewManager.m */,
 				F11748442D0722820044C1D9 /* glide-Bridging-Header.h */,
 				BB2F792B24A3F905000567C9 /* Supporting */,
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
@@ -484,6 +493,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
+				F1B0A0012D7A8F5A00A1B2C3 /* GlideRichTextView.swift in Sources */,
+				F1B0A0032D7A8F5A00A1B2C3 /* GlideRichTextViewManager.swift in Sources */,
+				F1B0A0052D7A8F5A00A1B2C3 /* GlideRichTextViewManager.m in Sources */,
 				7D520E3109EEB61D56FDD01D /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -556,7 +568,7 @@
 					"FB_SONARKIT_ENABLED=1",
 				);
 				INFOPLIST_FILE = glide/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -590,7 +602,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 32ZJ859QVF;
 				INFOPLIST_FILE = glide/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -682,7 +694,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					/usr/lib/swift,
 					"$(inherited)",
@@ -738,7 +750,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					/usr/lib/swift,
 					"$(inherited)",

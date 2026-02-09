@@ -1,17 +1,68 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/context/AuthContext';
 import { NotesColors } from '@/constants/theme';
 import { useRouter } from 'expo-router';
+import { clearQueryCache } from '@/lib/persister';
+import { resetDatabase } from '@/lib/database';
 
 export default function SettingsScreen() {
   const { user, logout, isAuthenticated } = useAuth();
   const router = useRouter();
+  const queryClient = useQueryClient();
 
   const displayName = useMemo(() => {
     return user?.full_name || user?.email || 'Profile';
   }, [user]);
+
+  const handleClearCache = () => {
+    Alert.alert(
+      'Clear Cache',
+      'This clears the local query cache. The app will refetch data as needed.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            await clearQueryCache();
+            queryClient.clear();
+            Alert.alert('Cache Cleared', 'Local query cache cleared.');
+          },
+        },
+      ]
+    );
+  };
+
+  const handleResetLocalDatabase = () => {
+    Alert.alert(
+      'Reset Local Database',
+      "This wipes the local SQLite database (notes, folders, actions, and rich text). Server data is unchanged.\n\nIf you're signed in and online, notes may reappear after sync/hydration.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset',
+          style: 'destructive',
+          onPress: async () => {
+            // Clear query cache first so UI isn't serving stale data.
+            await clearQueryCache();
+            queryClient.clear();
+
+            await resetDatabase();
+
+            // Force refetch on next screen visit.
+            queryClient.invalidateQueries();
+
+            Alert.alert('Reset Complete', 'Local database reset.');
+            // Take user back out of settings to continue testing quickly.
+            router.replace('/(tabs)');
+          },
+        },
+      ]
+    );
+  };
 
   const handleLogout = () => {
     Alert.alert(
@@ -121,6 +172,7 @@ export default function SettingsScreen() {
               icon="trash-outline"
               title="Clear Cache"
               subtitle="Free up storage space"
+              onPress={handleClearCache}
             />
             <SettingItem
               icon="help-circle-outline"
@@ -139,6 +191,24 @@ export default function SettingsScreen() {
               title="About"
               subtitle="Glide v1.0.0"
             />
+
+            {__DEV__ && (
+              <>
+                <View style={styles.sectionDivider} />
+                <SettingItem
+                  icon="trash-bin-outline"
+                  title="Reset Local Database"
+                  subtitle="Wipe local notes/folders/RTF (server unchanged)"
+                  onPress={handleResetLocalDatabase}
+                />
+                <SettingItem
+                  icon="flask-outline"
+                  title="Rich Editor Debug"
+                  subtitle="Native UITextView editor sandbox"
+                  onPress={() => router.push('/debug/rich-editor')}
+                />
+              </>
+            )}
           </View>
         )}
       </ScrollView>

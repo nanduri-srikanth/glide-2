@@ -1,4 +1,4 @@
-import { eq, and, asc, isNull, sql } from 'drizzle-orm';
+import { eq, and, asc, isNull, sql, notInArray, or, ne } from 'drizzle-orm';
 import { db } from '../database/client';
 import { folders, notes, type FolderRow, type FolderInsert, type SyncStatus } from '../database/schema';
 import { BaseRepository } from './BaseRepository';
@@ -312,6 +312,41 @@ class FoldersRepository extends BaseRepository<FolderRow, FolderInsert, typeof f
         await db.insert(folders).values(folderData);
       }
     }
+  }
+
+  /**
+   * Reconcile local folders with the server snapshot.
+   *
+   * This handles out-of-band deletes (e.g. server-side wipe) by pruning local rows
+   * that are no longer present on the server, while preserving local pending changes.
+   */
+  async reconcileFromServer(serverFolders: FolderResponse[], userId: string): Promise<void> {
+    // Upsert everything we got from the server first.
+    await this.bulkUpsert(serverFolders, userId);
+
+    // Then prune local folders that aren't on the server (but keep pending local changes).
+    const serverIds = this.flattenTree(serverFolders).map((f) => f.id);
+
+    // Delete rows that are NOT pending (including NULL).
+    const shouldDelete = or(isNull(folders.sync_status), ne(folders.sync_status, 'pending'));
+
+    if (serverIds.length === 0) {
+      // Server returned no folders: wipe all synced local folders for the user.
+      await db
+        .delete(folders)
+        .where(and(eq(folders.user_id, userId), shouldDelete));
+      return;
+    }
+
+    await db
+      .delete(folders)
+      .where(
+        and(
+          eq(folders.user_id, userId),
+          notInArray(folders.id, serverIds),
+          shouldDelete
+        )
+      );
   }
 
   /**

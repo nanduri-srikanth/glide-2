@@ -120,8 +120,18 @@ const CREATE_AUDIO_UPLOADS_TABLE = `
   )
 `;
 
+const CREATE_NOTE_RICH_CONTENT_TABLE = `
+  CREATE TABLE IF NOT EXISTS note_rich_content (
+    note_id TEXT PRIMARY KEY,
+    rtf_base64 TEXT NOT NULL,
+    plaintext TEXT,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+  )
+`;
+
 // Schema version - increment when schema changes
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 let isInitialized = false;
 let initPromise: Promise<void> | null = null;
@@ -245,6 +255,7 @@ export async function initializeDatabase(): Promise<void> {
         { name: 'sync_queue', sql: CREATE_SYNC_QUEUE_TABLE },
         { name: 'metadata', sql: CREATE_METADATA_TABLE },
         { name: 'audio_uploads', sql: CREATE_AUDIO_UPLOADS_TABLE },
+        { name: 'note_rich_content', sql: CREATE_NOTE_RICH_CONTENT_TABLE },
       ];
 
       for (const { name, sql } of statements) {
@@ -334,6 +345,7 @@ export async function clearDatabase(): Promise<void> {
   db.execSync('DELETE FROM sync_queue');
   db.execSync('DELETE FROM metadata');
   db.execSync('DELETE FROM audio_uploads');
+  db.execSync('DELETE FROM note_rich_content');
   console.log('[Database] All data cleared');
 }
 

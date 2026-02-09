@@ -82,6 +82,7 @@ node_modules/
 *.swp
 *.swo
 *~
+.autocoder/
 
 # Misc
 .DS_Store
