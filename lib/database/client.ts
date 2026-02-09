@@ -46,7 +46,12 @@ const CREATE_NOTES_TABLE = `
     updated_at TEXT NOT NULL,
     sync_status TEXT DEFAULT 'synced',
     local_updated_at TEXT,
-    server_updated_at TEXT
+    server_updated_at TEXT,
+    current_version_id TEXT,
+    full_transcript_plain TEXT,
+    body_plain TEXT,
+    summary_plain TEXT,
+    actions_json TEXT
   )
 `;
 
@@ -130,8 +135,42 @@ const CREATE_NOTE_RICH_CONTENT_TABLE = `
   )
 `;
 
+const CREATE_NOTE_INPUTS_TABLE = `
+  CREATE TABLE IF NOT EXISTS note_inputs (
+    id TEXT PRIMARY KEY,
+    note_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    type TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'user',
+    text_plain TEXT,
+    audio_url TEXT,
+    meta TEXT,
+    sync_status TEXT DEFAULT 'synced',
+    FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+  )
+`;
+
+const CREATE_NOTE_VERSIONS_TABLE = `
+  CREATE TABLE IF NOT EXISTS note_versions (
+    id TEXT PRIMARY KEY,
+    note_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    title TEXT,
+    body_plain TEXT,
+    body_rtf_base64 TEXT,
+    summary_plain TEXT,
+    actions_json TEXT,
+    what_removed TEXT,
+    parent_version_id TEXT,
+    sync_status TEXT DEFAULT 'synced',
+    FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+  )
+`;
+
 // Schema version - increment when schema changes
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 let isInitialized = false;
 let initPromise: Promise<void> | null = null;
@@ -179,6 +218,11 @@ function runMigrations(db: SQLite.SQLiteDatabase): void {
       { name: 'server_updated_at', sql: 'ALTER TABLE notes ADD COLUMN server_updated_at TEXT' },
       { name: 'local_audio_path', sql: 'ALTER TABLE notes ADD COLUMN local_audio_path TEXT' },
       { name: 'is_deleted', sql: 'ALTER TABLE notes ADD COLUMN is_deleted INTEGER DEFAULT 0' },
+      { name: 'current_version_id', sql: 'ALTER TABLE notes ADD COLUMN current_version_id TEXT' },
+      { name: 'full_transcript_plain', sql: 'ALTER TABLE notes ADD COLUMN full_transcript_plain TEXT' },
+      { name: 'body_plain', sql: 'ALTER TABLE notes ADD COLUMN body_plain TEXT' },
+      { name: 'summary_plain', sql: 'ALTER TABLE notes ADD COLUMN summary_plain TEXT' },
+      { name: 'actions_json', sql: 'ALTER TABLE notes ADD COLUMN actions_json TEXT' },
     ];
 
     for (const { name, sql } of noteColumns) {
@@ -256,6 +300,8 @@ export async function initializeDatabase(): Promise<void> {
         { name: 'metadata', sql: CREATE_METADATA_TABLE },
         { name: 'audio_uploads', sql: CREATE_AUDIO_UPLOADS_TABLE },
         { name: 'note_rich_content', sql: CREATE_NOTE_RICH_CONTENT_TABLE },
+        { name: 'note_inputs', sql: CREATE_NOTE_INPUTS_TABLE },
+        { name: 'note_versions', sql: CREATE_NOTE_VERSIONS_TABLE },
       ];
 
       for (const { name, sql } of statements) {
@@ -339,6 +385,8 @@ export function closeDatabase(): void {
  */
 export async function clearDatabase(): Promise<void> {
   const db = getExpoDatabase();
+  db.execSync('DELETE FROM note_versions');
+  db.execSync('DELETE FROM note_inputs');
   db.execSync('DELETE FROM notes');
   db.execSync('DELETE FROM folders');
   db.execSync('DELETE FROM actions');

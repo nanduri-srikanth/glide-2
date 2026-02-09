@@ -60,6 +60,22 @@ export default function NotesLayout() {
           fullScreenGestureEnabled: true,
         }}
       />
+      <Stack.Screen
+        name="detail/transcript/[noteId]"
+        options={{
+          title: 'Full Transcript',
+          headerBackVisible: true,
+          headerShadowVisible: false,
+        }}
+      />
+      <Stack.Screen
+        name="detail/history/[noteId]"
+        options={{
+          title: 'Version History',
+          headerBackVisible: true,
+          headerShadowVisible: false,
+        }}
+      />
     </Stack>
   );
 }

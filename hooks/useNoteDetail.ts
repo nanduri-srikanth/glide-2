@@ -4,7 +4,7 @@
  * Fetches and manages a single note using TanStack Query for SWR caching.
  */
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNoteDetailQuery, useUpdateNoteMutation, useDeleteNoteMutation, queryKeys } from '@/hooks/queries';
 import { notesService, NoteDetailResponse } from '@/services/notes';
@@ -12,6 +12,25 @@ import { actionsService, ActionExecuteResponse } from '@/services/actions';
 import { voiceService, InputHistoryEntry, UpdateDecision } from '@/services/voice';
 import { Note } from '@/data/types';
 import { useNotes } from '@/context/NotesContext';
+import { noteInputsRepository, noteVersionsRepository } from '@/lib/repositories';
+import type { NoteInputInsert } from '@/lib/database/schema';
+
+/**
+ * Convert raw_inputs from a SynthesisResponse into NoteInputInsert rows.
+ */
+function rawInputsToInserts(noteId: string, rawInputs: InputHistoryEntry[]): NoteInputInsert[] {
+  return rawInputs.map((entry) => ({
+    id: `${noteId}_${entry.timestamp}`,
+    note_id: noteId,
+    created_at: entry.timestamp,
+    type: entry.type,
+    source: 'user' as const,
+    text_plain: entry.content || null,
+    audio_url: entry.audio_key || null,
+    meta: entry.duration != null ? JSON.stringify({ duration: entry.duration }) : null,
+    sync_status: 'synced' as const,
+  }));
+}
 
 export function useNoteDetail(noteId: string | undefined) {
   const queryClient = useQueryClient();
@@ -159,6 +178,30 @@ export function useNoteDetail(noteId: string | undefined) {
       setLastDecision(data.decision);
     }
 
+    // Directly sync note_inputs from the API response's raw_inputs
+    if (data?.raw_inputs?.length) {
+      try {
+        await noteInputsRepository.replaceAllForNote(noteId, rawInputsToInserts(noteId, data.raw_inputs));
+      } catch (err) {
+        console.warn('[useNoteDetail] Failed to sync note_inputs from addContent:', err);
+      }
+    }
+
+    // Create a version snapshot after content addition
+    try {
+      await noteVersionsRepository.create({
+        note_id: noteId,
+        kind: data?.decision?.update_type === 'resynthesize' ? 'synth' : 'manual',
+        actor: 'user',
+        title: data?.title || null,
+        body_plain: data?.narrative || null,
+        summary_plain: data?.summary || null,
+      });
+      await noteVersionsRepository.prune(noteId);
+    } catch (err) {
+      console.warn('[useNoteDetail] Failed to create version after addContent:', err);
+    }
+
     // Refresh note to get updated data
     await refresh();
     return true;
@@ -190,6 +233,15 @@ export function useNoteDetail(noteId: string | undefined) {
 
     if (apiError) {
       return false;
+    }
+
+    // Sync note_inputs from the response's raw_inputs
+    if (data?.raw_inputs?.length) {
+      try {
+        await noteInputsRepository.replaceAllForNote(noteId, rawInputsToInserts(noteId, data.raw_inputs));
+      } catch (err) {
+        console.warn('[useNoteDetail] Failed to sync note_inputs from deleteInput:', err);
+      }
     }
 
     // Refresh note to get updated data
@@ -224,6 +276,30 @@ export function useNoteDetail(noteId: string | undefined) {
       return false;
     }
 
+    // Directly sync note_inputs from the response's raw_inputs
+    if (data?.raw_inputs?.length) {
+      try {
+        await noteInputsRepository.replaceAllForNote(noteId, rawInputsToInserts(noteId, data.raw_inputs));
+      } catch (err) {
+        console.warn('[useNoteDetail] Failed to sync note_inputs from resynthesize:', err);
+      }
+    }
+
+    // Create a version snapshot after re-synthesis
+    try {
+      await noteVersionsRepository.create({
+        note_id: noteId,
+        kind: 'synth',
+        actor: 'ai',
+        title: data?.title || null,
+        body_plain: data?.narrative || null,
+        summary_plain: data?.summary || null,
+      });
+      await noteVersionsRepository.prune(noteId);
+    } catch (err) {
+      console.warn('[useNoteDetail] Failed to create version after resynthesize:', err);
+    }
+
     // Refresh note to get updated data
     await refresh();
     return true;
@@ -243,6 +319,29 @@ export function useNoteDetail(noteId: string | undefined) {
       audio_key: entry.audio_key,
     }));
   }, [displayNote?.ai_metadata?.input_history]);
+
+  // Fallback sync: keep note_inputs in sync with ai_metadata.input_history
+  // for cases where the note is loaded from cache/server without a fresh API call.
+  // Uses a serialized snapshot to detect real changes (not just count).
+  const lastSyncedSnapshotRef = useRef<string>('');
+  useEffect(() => {
+    if (!noteId || inputHistory.length === 0) return;
+
+    const snapshot = JSON.stringify(inputHistory);
+    if (lastSyncedSnapshotRef.current === snapshot) return;
+    lastSyncedSnapshotRef.current = snapshot;
+
+    (async () => {
+      try {
+        await noteInputsRepository.replaceAllForNote(
+          noteId,
+          rawInputsToInserts(noteId, inputHistory)
+        );
+      } catch (err) {
+        console.warn('[useNoteDetail] Failed to sync note_inputs from ai_metadata:', err);
+      }
+    })();
+  }, [noteId, inputHistory]);
 
   return {
     note,

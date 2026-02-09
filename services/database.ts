@@ -18,7 +18,7 @@ import { Platform } from 'react-native';
 export const DB_NAME = 'glide.db';
 
 // Database version for migrations
-export const DB_VERSION = 6;
+export const DB_VERSION = 8;
 
 // Enable debug logging in development
 const DEBUG = __DEV__;
@@ -164,6 +164,11 @@ class DatabaseManager {
         sync_status TEXT DEFAULT 'synced',
         local_updated_at TEXT,
         server_updated_at TEXT,
+        current_version_id TEXT,
+        full_transcript_plain TEXT,
+        body_plain TEXT,
+        summary_plain TEXT,
+        actions_json TEXT,
         FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE SET NULL
       );
 
@@ -262,6 +267,42 @@ class DatabaseManager {
         rtf_base64 TEXT NOT NULL,
         plaintext TEXT,
         updated_at TEXT NOT NULL,
+        FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+      );
+    `);
+
+    // Create note_inputs table for immutable append-only inputs
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS note_inputs (
+        id TEXT PRIMARY KEY,
+        note_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        type TEXT NOT NULL,
+        source TEXT NOT NULL DEFAULT 'user',
+        text_plain TEXT,
+        audio_url TEXT,
+        meta TEXT,
+        sync_status TEXT DEFAULT 'synced',
+        FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+      );
+    `);
+
+    // Create note_versions table for versioned note state
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS note_versions (
+        id TEXT PRIMARY KEY,
+        note_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        actor TEXT NOT NULL,
+        title TEXT,
+        body_plain TEXT,
+        body_rtf_base64 TEXT,
+        summary_plain TEXT,
+        actions_json TEXT,
+        what_removed TEXT,
+        parent_version_id TEXT,
+        sync_status TEXT DEFAULT 'synced',
         FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
       );
     `);
@@ -419,6 +460,61 @@ class DatabaseManager {
         `);
         break;
 
+      case 7:
+        // Add note_inputs and note_versions tables for history & audit
+        await this.db.execAsync(`
+          CREATE TABLE IF NOT EXISTS note_inputs (
+            id TEXT PRIMARY KEY,
+            note_id TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            type TEXT NOT NULL,
+            source TEXT NOT NULL DEFAULT 'user',
+            text_plain TEXT,
+            audio_url TEXT,
+            meta TEXT,
+            sync_status TEXT DEFAULT 'synced',
+            FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+          );
+        `);
+        await this.db.execAsync(`
+          CREATE TABLE IF NOT EXISTS note_versions (
+            id TEXT PRIMARY KEY,
+            note_id TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            actor TEXT NOT NULL,
+            title TEXT,
+            body_plain TEXT,
+            body_rtf_base64 TEXT,
+            summary_plain TEXT,
+            actions_json TEXT,
+            what_removed TEXT,
+            parent_version_id TEXT,
+            sync_status TEXT DEFAULT 'synced',
+            FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+          );
+        `);
+        break;
+
+      case 8:
+        // Add history/audit columns to notes table
+        try {
+          await this.db.execAsync(`ALTER TABLE notes ADD COLUMN current_version_id TEXT`);
+        } catch (e) { /* Column may already exist */ }
+        try {
+          await this.db.execAsync(`ALTER TABLE notes ADD COLUMN full_transcript_plain TEXT`);
+        } catch (e) { /* Column may already exist */ }
+        try {
+          await this.db.execAsync(`ALTER TABLE notes ADD COLUMN body_plain TEXT`);
+        } catch (e) { /* Column may already exist */ }
+        try {
+          await this.db.execAsync(`ALTER TABLE notes ADD COLUMN summary_plain TEXT`);
+        } catch (e) { /* Column may already exist */ }
+        try {
+          await this.db.execAsync(`ALTER TABLE notes ADD COLUMN actions_json TEXT`);
+        } catch (e) { /* Column may already exist */ }
+        break;
+
       default:
         throw new Error(`Unknown migration version: ${version}`);
     }
@@ -447,6 +543,8 @@ class DatabaseManager {
 
     // Drop all tables
     await db.execAsync(`
+      DROP TABLE IF EXISTS note_versions;
+      DROP TABLE IF EXISTS note_inputs;
       DROP TABLE IF EXISTS note_rich_content;
       DROP TABLE IF EXISTS audio_uploads;
       DROP TABLE IF EXISTS sync_queue;

@@ -45,6 +45,8 @@ import { InputHistoryEntry } from '@/services/voice';
 import { GlideRichTextEditor, GlideRichTextEditorHandle } from '@/components/notes/GlideRichTextEditor';
 import { useRichEditorEnabled } from '@/hooks/useRichEditorEnabled';
 import { richContentRepository } from '@/lib/repositories';
+import { DiffReviewModal } from '@/components/notes/DiffReviewModal';
+import { historyService, type SynthesizeResponse } from '@/services/history';
 
 const INPUT_ACCESSORY_ID = 'note-formatting-toolbar';
 
@@ -188,6 +190,9 @@ export default function NoteDetailScreen() {
   const [showDraftRecoveryModal, setShowDraftRecoveryModal] = useState(false);
   const [pendingNavigationAction, setPendingNavigationAction] = useState<(() => void) | null>(null);
   const [showOptionsMenu, setShowOptionsMenu] = useState(false);
+  const [showDiffReview, setShowDiffReview] = useState(false);
+  const [isSynthesizing, setIsSynthesizing] = useState(false);
+  const [synthDiff, setSynthDiff] = useState<SynthesizeResponse['diff'] | null>(null);
 
   // Edit mode state
   const [isEditing, setIsEditing] = useState(false);
@@ -212,6 +217,8 @@ export default function NoteDetailScreen() {
   const [isTitleFocused, setIsTitleFocused] = useState(false);
   const [isTranscriptFocused, setIsTranscriptFocused] = useState(false);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const [tagsExpanded, setTagsExpanded] = useState(false);
+  const [newTagText, setNewTagText] = useState('');
   const originalTitleRef = useRef<string>(''); // For reverting if user clears title
 
   // Keyboard visibility tracking
@@ -359,6 +366,7 @@ export default function NoteDetailScreen() {
       return;
     }
     setIsEditing(true);
+    setTagsExpanded(false);
     // Prefer focusing the editor body (title can be edited explicitly by tapping it).
     // For the non-native editor, we can focus the transcript TextInput.
     if (!richEditorEnabled) {
@@ -368,6 +376,7 @@ export default function NoteDetailScreen() {
 
   // Exit edit mode (can be called manually or on blur)
   const handleDoneEditing = useCallback(async () => {
+    setTagsExpanded(false);
     // Clear any pending save
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
@@ -621,6 +630,43 @@ export default function NoteDetailScreen() {
     });
   }, []);
 
+  const handleAcceptSynth = useCallback(async () => {
+    setShowDiffReview(false);
+    const success = await resynthesizeNote();
+    if (success) {
+      Alert.alert('Success', 'Note has been re-synthesized.');
+    }
+  }, [resynthesizeNote]);
+
+  const handleDiscardSynth = useCallback(() => {
+    setShowDiffReview(false);
+    setSynthDiff(null);
+  }, []);
+
+  const MAX_TAGS = 10;
+
+  const handleAddTag = useCallback(() => {
+    const tag = newTagText.trim().replace(/^#/, '').replace(/\s+/g, '-');
+    if (!tag || !note) return;
+    if (note.tags.length >= MAX_TAGS) {
+      Alert.alert('Limit Reached', `You can have up to ${MAX_TAGS} tags.`);
+      return;
+    }
+    if (note.tags.includes(tag)) {
+      setNewTagText('');
+      return;
+    }
+    const updated = [...note.tags, tag];
+    updateNote({ tags: updated });
+    setNewTagText('');
+  }, [newTagText, note, updateNote]);
+
+  const handleRemoveTag = useCallback((tagToRemove: string) => {
+    if (!note) return;
+    const updated = note.tags.filter(t => t !== tagToRemove);
+    updateNote({ tags: updated });
+  }, [note, updateNote]);
+
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -667,32 +713,29 @@ export default function NoteDetailScreen() {
     console.log('Share note');
   };
 
-  // Handle re-synthesize - regenerate narrative from input history
+  // Handle re-synthesize - call API, then show diff review modal
   const handleResynthesize = () => {
     if (!isAuthenticated) {
       Alert.alert('Sign In Required', 'Please sign in to use AI features.');
       return;
     }
 
-    Alert.alert(
-      'Re-synthesize Note',
-      'AI will analyze all your inputs and regenerate a cohesive narrative. Continue?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Re-synthesize',
-          onPress: async () => {
-            const success = await resynthesizeNote();
-            if (success) {
-              Alert.alert('Success', 'Note has been re-synthesized.');
-            } else {
-              Alert.alert('Error', 'Failed to re-synthesize. Please try again.');
-            }
-          },
-        },
-      ]
-    );
+    // Open the diff review modal and kick off synthesis in the background
+    setShowDiffReview(true);
+    setIsSynthesizing(true);
+    setSynthDiff(null);
+
+    historyService.synthesize(noteId).then(({ data, error }) => {
+      setIsSynthesizing(false);
+      if (error || !data) {
+        Alert.alert('Error', error || 'Failed to re-synthesize. Please try again.');
+        setShowDiffReview(false);
+        return;
+      }
+      setSynthDiff(data.diff);
+    });
   };
+
 
 
   const handleDelete = () => {
@@ -849,14 +892,53 @@ export default function NoteDetailScreen() {
             </View>
           </Animated.View>
 
-          {/* Tags */}
-          {note.tags.length > 0 && (
+          {/* Tags — show up to 2 collapsed, all + editing when expanded */}
+          {(note.tags.length > 0 || tagsExpanded) && (
             <Animated.View style={[styles.tagsContainer, { opacity: headerOpacity }]}>
-              {note.tags.map((tag, index) => (
-                <View key={index} style={styles.tag}>
+              {(tagsExpanded ? note.tags : note.tags.slice(0, 2)).map((tag, index) => (
+                <View key={index} style={[styles.tag, tagsExpanded && styles.tagExpanded]}>
                   <Text style={styles.tagText}>#{tag}</Text>
+                  {tagsExpanded && (
+                    <TouchableOpacity
+                      onPress={() => handleRemoveTag(tag)}
+                      hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
+                    >
+                      <Ionicons name="close-circle" size={14} color={NotesColors.textSecondary} />
+                    </TouchableOpacity>
+                  )}
                 </View>
               ))}
+              {!tagsExpanded && note.tags.length > 2 && (
+                <TouchableOpacity activeOpacity={0.6} onPress={() => setTagsExpanded(true)}>
+                  <Text style={styles.tagsOverflowText}>+{note.tags.length - 2} more</Text>
+                </TouchableOpacity>
+              )}
+              {!tagsExpanded && note.tags.length <= 2 && note.tags.length > 0 && (
+                <TouchableOpacity activeOpacity={0.6} onPress={() => setTagsExpanded(true)}>
+                  <Ionicons name="add-circle-outline" size={18} color={NotesColors.textSecondary} />
+                </TouchableOpacity>
+              )}
+              {tagsExpanded && note.tags.length < MAX_TAGS && (
+                <View style={styles.tagInputWrapper}>
+                  <TextInput
+                    style={styles.tagInput}
+                    placeholder="add tag"
+                    placeholderTextColor={NotesColors.textSecondary}
+                    value={newTagText}
+                    onChangeText={setNewTagText}
+                    onSubmitEditing={handleAddTag}
+                    returnKeyType="done"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    maxLength={30}
+                  />
+                </View>
+              )}
+              {tagsExpanded && (
+                <TouchableOpacity activeOpacity={0.6} onPress={() => { setTagsExpanded(false); setNewTagText(''); }}>
+                  <Text style={styles.tagsOverflowText}>show less</Text>
+                </TouchableOpacity>
+              )}
             </Animated.View>
           )}
         </View>
@@ -1030,6 +1112,26 @@ export default function NoteDetailScreen() {
               <Ionicons name="share-outline" size={20} color={NotesColors.primary} />
               <Text style={styles.optionsMenuText}>Share</Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.optionsMenuItem}
+              onPress={() => {
+                setShowOptionsMenu(false);
+                router.push(`/notes/detail/transcript/${noteId}`);
+              }}
+            >
+              <Ionicons name="document-text-outline" size={20} color={NotesColors.primary} />
+              <Text style={styles.optionsMenuText}>Full Transcript</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.optionsMenuItem}
+              onPress={() => {
+                setShowOptionsMenu(false);
+                router.push(`/notes/detail/history/${noteId}`);
+              }}
+            >
+              <Ionicons name="time-outline" size={20} color={NotesColors.primary} />
+              <Text style={styles.optionsMenuText}>Version History</Text>
+            </TouchableOpacity>
             {inputHistory.length > 0 && (
               <TouchableOpacity
                 style={styles.optionsMenuItem}
@@ -1055,6 +1157,15 @@ export default function NoteDetailScreen() {
           </View>
         </Pressable>
       </Modal>
+
+      {/* Diff Review Modal for Re-synthesize */}
+      <DiffReviewModal
+        visible={showDiffReview}
+        onAccept={handleAcceptSynth}
+        onDiscard={handleDiscardSynth}
+        diff={synthDiff}
+        isLoading={isSynthesizing}
+      />
 
       {/* Add Content Modal */}
       <AddContentModal
@@ -1273,6 +1384,33 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: NotesColors.primary,
     fontWeight: '500',
+  },
+  tagExpanded: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  tagInputWrapper: {
+    backgroundColor: 'rgba(98, 69, 135, 0.08)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: NotesColors.border,
+    borderStyle: 'dashed',
+    paddingHorizontal: 10,
+    paddingVertical: 2,
+  },
+  tagInput: {
+    fontSize: 13,
+    color: NotesColors.textPrimary,
+    minWidth: 60,
+    padding: 0,
+    height: 22,
+  },
+  tagsOverflowText: {
+    fontSize: 13,
+    color: NotesColors.textSecondary,
+    fontWeight: '500',
+    paddingVertical: 4,
   },
   transcriptText: {
     fontSize: 16,

@@ -23,6 +23,11 @@ export const notes = sqliteTable('notes', {
   sync_status: text('sync_status').$type<SyncStatus>().default('synced'),
   local_updated_at: text('local_updated_at'),
   server_updated_at: text('server_updated_at'),
+  current_version_id: text('current_version_id'),
+  full_transcript_plain: text('full_transcript_plain'),
+  body_plain: text('body_plain'),
+  summary_plain: text('summary_plain'),
+  actions_json: text('actions_json', { mode: 'json' }),
 });
 
 export const folders = sqliteTable('folders', {
@@ -96,6 +101,39 @@ export const noteRichContent = sqliteTable('note_rich_content', {
 
 export type NoteRichContentRow = typeof noteRichContent.$inferSelect;
 export type NoteRichContentInsert = typeof noteRichContent.$inferInsert;
+
+export const noteInputs = sqliteTable('note_inputs', {
+  id: text('id').primaryKey(),
+  note_id: text('note_id').notNull(),
+  created_at: text('created_at').notNull(),
+  type: text('type').notNull(), // 'audio' | 'text' | 'import'
+  source: text('source').notNull().default('user'), // 'user' | 'ai'
+  text_plain: text('text_plain'),
+  audio_url: text('audio_url'),
+  meta: text('meta', { mode: 'json' }),
+  sync_status: text('sync_status').$type<SyncStatus>().default('synced'),
+});
+
+export const noteVersions = sqliteTable('note_versions', {
+  id: text('id').primaryKey(),
+  note_id: text('note_id').notNull(),
+  created_at: text('created_at').notNull(),
+  kind: text('kind').notNull(), // 'manual' | 'synth' | 'metadata'
+  actor: text('actor').notNull(), // 'user' | 'ai'
+  title: text('title'),
+  body_plain: text('body_plain'),
+  body_rtf_base64: text('body_rtf_base64'),
+  summary_plain: text('summary_plain'),
+  actions_json: text('actions_json', { mode: 'json' }),
+  what_removed: text('what_removed'),
+  parent_version_id: text('parent_version_id'),
+  sync_status: text('sync_status').$type<SyncStatus>().default('synced'),
+});
+
+export type NoteInputRow = typeof noteInputs.$inferSelect;
+export type NoteInputInsert = typeof noteInputs.$inferInsert;
+export type NoteVersionRow = typeof noteVersions.$inferSelect;
+export type NoteVersionInsert = typeof noteVersions.$inferInsert;
 
 // Type exports for use in repositories
 export type NoteRow = typeof notes.$inferSelect;
