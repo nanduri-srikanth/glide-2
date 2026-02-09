@@ -209,6 +209,8 @@ export default function NoteDetailScreen() {
   const scrollViewRef = useRef<any>(null);
   const [scrollViewHeight, setScrollViewHeight] = useState(0);
   const [editorTopY, setEditorTopY] = useState(0);
+  const lastScrollTimeRef = useRef(0);
+  const lastSelectionRef = useRef(0);
 
   // Rich editor state
   const richEditorEnabled = useRichEditorEnabled();
@@ -371,6 +373,7 @@ export default function NoteDetailScreen() {
   }, [editedTitle, userEditedTitle, debouncedSave]);
 
   // Auto-scroll so caret sits at ~25% down the visible viewport
+  // Throttled with comfort band to reduce jitter during continuous typing
   const handleSelectionChange = useCallback((e: {
     selectionStart: number;
     selectionEnd: number;
@@ -380,21 +383,35 @@ export default function NoteDetailScreen() {
     if (!isEditing) return;
     if (keyboardHeight === 0) return; // No keyboard visible, no scrolling needed
 
-    // caretY is in the native textView's coordinate space (relative to editor top)
-    // caretContentY is the caret's position in the ScrollView's content
     const caretContentY = editorTopY + e.caretY;
 
-    // Visible area above keyboard
     const visibleHeight = scrollViewHeight - keyboardHeight;
     if (visibleHeight <= 0) return;
+
+    // Determine if this is a small move (typing) vs a jump (tap, focus)
+    const selectionDelta = Math.abs(e.selectionEnd - lastSelectionRef.current);
+    lastSelectionRef.current = e.selectionEnd;
+    const isTyping = selectionDelta <= 2;
+
+    // Throttle: skip if less than 100ms since last scroll
+    const now = Date.now();
+    if (isTyping && now - lastScrollTimeRef.current < 100) return;
 
     // Target: place caret at 25% down the visible area
     const targetCaretScreenY = visibleHeight * 0.25;
     const targetScrollY = Math.max(0, caretContentY - targetCaretScreenY);
 
-    // Use the scrollView ref to scroll
-    // @ts-ignore - Animated.ScrollView has scrollTo via getNode or direct
-    scrollViewRef.current?.scrollTo({ y: targetScrollY, animated: true });
+    if (isTyping) {
+      // For typing, scroll instantly (no animation) to avoid jitter, rely on throttle
+      lastScrollTimeRef.current = now;
+      // @ts-ignore - Animated.ScrollView has scrollTo via getNode or direct
+      scrollViewRef.current?.scrollTo({ y: targetScrollY, animated: false });
+    } else {
+      // Jump (tap, initial focus): smooth scroll
+      lastScrollTimeRef.current = now;
+      // @ts-ignore - Animated.ScrollView has scrollTo via getNode or direct
+      scrollViewRef.current?.scrollTo({ y: targetScrollY, animated: true });
+    }
   }, [isEditing, keyboardHeight, scrollViewHeight, editorTopY]);
 
   // Enter edit mode
@@ -412,6 +429,12 @@ export default function NoteDetailScreen() {
       setTimeout(() => transcriptInputRef.current?.focus(), 100);
     }
   }, [isAuthenticated, richEditorEnabled]);
+
+  // Handle tap-to-edit from native GlideRichTextEditor (replaces Pressable overlay)
+  const handleEditTap = useCallback((e: { tapOffset: number; tapY: number }) => {
+    if (isEditing) return;
+    handleEdit();
+  }, [isEditing, handleEdit]);
 
   // Exit edit mode (can be called manually or on blur)
   const handleDoneEditing = useCallback(async () => {
@@ -1121,14 +1144,8 @@ export default function NoteDetailScreen() {
               onSelectionChange={handleSelectionChange}
               placeholder="Start typing..."
               style={styles.richEditor}
+              {...({ onEditTap: handleEditTap } as any)}
             />
-            {/* Tap overlay for read mode — captures taps without blocking scroll */}
-            {!isEditing && (
-              <Pressable
-                style={StyleSheet.absoluteFill}
-                onPress={handleEdit}
-              />
-            )}
           </View>
         ) : (
           // Non-rich-editor path (Android, or feature disabled)

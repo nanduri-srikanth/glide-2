@@ -11,6 +11,7 @@ final class GlideRichTextView: UIView, UITextViewDelegate {
   private var hasAppliedInitialPlaintext = false
   private var hasAutoFocused = false
   private var debounceTimer: Timer?
+  private var tapToEditRecognizer: UITapGestureRecognizer?
   private lazy var accessoryToolbar: UIToolbar = makeAccessoryToolbar()
 
   // MARK: - React Props
@@ -154,6 +155,7 @@ final class GlideRichTextView: UIView, UITextViewDelegate {
       if textView.isFirstResponder {
         textView.reloadInputViews()
       }
+      tapToEditRecognizer?.isEnabled = !editable
     }
   }
 
@@ -170,6 +172,7 @@ final class GlideRichTextView: UIView, UITextViewDelegate {
   }
 
   @objc var onChange: RCTBubblingEventBlock?
+  @objc var onEditTap: RCTBubblingEventBlock?
   @objc var onRichSnapshot: RCTBubblingEventBlock?
   @objc var onSelectionChange: RCTBubblingEventBlock?
 
@@ -222,7 +225,35 @@ final class GlideRichTextView: UIView, UITextViewDelegate {
     addSubview(textView)
     addSubview(placeholderLabel)
 
+    // Tap-to-edit: fires onEditTap when in read mode (editable=false).
+    // Long-press for text selection passes through because cancelsTouchesInView is false.
+    let tapToEdit = UITapGestureRecognizer(target: self, action: #selector(handleTapToEdit(_:)))
+    tapToEdit.numberOfTapsRequired = 1
+    tapToEdit.cancelsTouchesInView = false
+    textView.addGestureRecognizer(tapToEdit)
+    tapToEditRecognizer = tapToEdit
+
     updatePlaceholderVisibility()
+  }
+
+  @objc private func handleTapToEdit(_ gesture: UITapGestureRecognizer) {
+    // Only fire when not editable (read mode)
+    guard !editable else { return }
+
+    // Get the tap location in the textView for cursor placement
+    let point = gesture.location(in: textView)
+
+    // Find the closest text position to the tap point
+    guard let position = textView.closestPosition(to: point) else {
+      onEditTap?([:])
+      return
+    }
+
+    let offset = textView.offset(from: textView.beginningOfDocument, to: position)
+    onEditTap?([
+      "tapOffset": offset,
+      "tapY": point.y,
+    ])
   }
 
   /// Shared paragraph style used for both typing and loaded content.

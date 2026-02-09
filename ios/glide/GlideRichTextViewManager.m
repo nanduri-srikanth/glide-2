@@ -15,6 +15,7 @@ RCT_EXPORT_VIEW_PROPERTY(scrollEnabled, BOOL)
 RCT_EXPORT_VIEW_PROPERTY(selectable, BOOL)
 RCT_EXPORT_VIEW_PROPERTY(focusNonce, NSNumber)
 RCT_EXPORT_VIEW_PROPERTY(onChange, RCTBubblingEventBlock)
+RCT_EXPORT_VIEW_PROPERTY(onEditTap, RCTBubblingEventBlock)
 RCT_EXPORT_VIEW_PROPERTY(onRichSnapshot, RCTBubblingEventBlock)
 RCT_EXPORT_VIEW_PROPERTY(onSelectionChange, RCTBubblingEventBlock)
 
