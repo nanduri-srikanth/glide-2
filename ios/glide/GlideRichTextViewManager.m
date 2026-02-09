@@ -12,8 +12,11 @@ RCT_EXPORT_VIEW_PROPERTY(snapshotNonce, NSNumber)
 RCT_EXPORT_VIEW_PROPERTY(autoFocus, BOOL)
 RCT_EXPORT_VIEW_PROPERTY(editable, BOOL)
 RCT_EXPORT_VIEW_PROPERTY(scrollEnabled, BOOL)
+RCT_EXPORT_VIEW_PROPERTY(selectable, BOOL)
+RCT_EXPORT_VIEW_PROPERTY(focusNonce, NSNumber)
 RCT_EXPORT_VIEW_PROPERTY(onChange, RCTBubblingEventBlock)
 RCT_EXPORT_VIEW_PROPERTY(onRichSnapshot, RCTBubblingEventBlock)
+RCT_EXPORT_VIEW_PROPERTY(onSelectionChange, RCTBubblingEventBlock)
 
 // Commands
 RCT_EXTERN_METHOD(toggleBold:(nonnull NSNumber *)reactTag)

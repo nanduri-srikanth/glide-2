@@ -132,6 +132,19 @@ final class GlideRichTextView: UIView, UITextViewDelegate {
     }
   }
 
+  private var lastFocusNonce: Int = 0
+  @objc var focusNonce: NSNumber = 0 {
+    didSet {
+      let nonce = focusNonce.intValue
+      if nonce > 0 && nonce != lastFocusNonce {
+        lastFocusNonce = nonce
+        DispatchQueue.main.async { [weak self] in
+          _ = self?.textView.becomeFirstResponder()
+        }
+      }
+    }
+  }
+
   @objc var editable: Bool = true {
     didSet {
       textView.isEditable = editable
@@ -150,8 +163,15 @@ final class GlideRichTextView: UIView, UITextViewDelegate {
     }
   }
 
+  @objc var selectable: Bool = true {
+    didSet {
+      textView.isSelectable = selectable
+    }
+  }
+
   @objc var onChange: RCTBubblingEventBlock?
   @objc var onRichSnapshot: RCTBubblingEventBlock?
+  @objc var onSelectionChange: RCTBubblingEventBlock?
 
   // MARK: - Init
 
@@ -282,6 +302,39 @@ final class GlideRichTextView: UIView, UITextViewDelegate {
   func textViewDidChangeSelection(_ textView: UITextView) {
     if isApplyingContentFromJS { return }
     lastSelectedRange = textView.selectedRange
+
+    // Fire onSelectionChange with caret geometry for JS-side auto-scroll
+    guard let onSelectionChange = onSelectionChange else { return }
+
+    let selection = textView.selectedRange
+
+    // Get the caret rect in the textView's coordinate space.
+    // For a range selection, use the end of the selection.
+    let caretPosition: UITextPosition
+    if let pos = textView.position(from: textView.beginningOfDocument, offset: selection.location + selection.length) {
+      caretPosition = pos
+    } else if let pos = textView.position(from: textView.beginningOfDocument, offset: selection.location) {
+      caretPosition = pos
+    } else {
+      return
+    }
+
+    let caretRect = textView.caretRect(for: caretPosition)
+
+    // Only fire if we have a valid rect
+    guard !caretRect.isNull && !caretRect.isInfinite else { return }
+
+    onSelectionChange([
+      "selectionStart": selection.location,
+      "selectionEnd": selection.location + selection.length,
+      "caretY": caretRect.origin.y,
+      "caretHeight": caretRect.size.height,
+    ])
+  }
+
+  func textViewDidBeginEditing(_ textView: UITextView) {
+    // Fire initial selection event so JS can scroll to caret position
+    textViewDidChangeSelection(textView)
   }
 
   // MARK: - Snapshot Methods

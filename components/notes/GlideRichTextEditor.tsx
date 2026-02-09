@@ -16,6 +16,15 @@ type NativeChangeEvent = {
   };
 };
 
+type NativeSelectionChangeEvent = {
+  nativeEvent: {
+    selectionStart: number;
+    selectionEnd: number;
+    caretY: number;
+    caretHeight: number;
+  };
+};
+
 type NativeProps = ViewProps & {
   content?: string;
   placeholder?: string;
@@ -25,8 +34,11 @@ type NativeProps = ViewProps & {
   autoFocus?: boolean;
   editable?: boolean;
   scrollEnabled?: boolean;
+  selectable?: boolean;
+  focusNonce?: number;
   onChange?: (e: NativeChangeEvent) => void;
   onRichSnapshot?: (e: { nativeEvent: { rtfBase64: string } }) => void;
+  onSelectionChange?: (e: NativeSelectionChangeEvent) => void;
 };
 
 export type GlideRichTextEditorHandle = {
@@ -34,10 +46,11 @@ export type GlideRichTextEditorHandle = {
   focus: () => void;
 };
 
-export type GlideRichTextEditorProps = Omit<NativeProps, 'onChange' | 'onRichSnapshot' | 'snapshotNonce'> & {
+export type GlideRichTextEditorProps = Omit<NativeProps, 'onChange' | 'onRichSnapshot' | 'snapshotNonce' | 'focusNonce' | 'onSelectionChange'> & {
   onChangeText?: (text: string) => void;
   onChange?: (e: NativeChangeEvent) => void;
   onRichSnapshot?: (rtfBase64: string) => void;
+  onSelectionChange?: (e: { selectionStart: number; selectionEnd: number; caretY: number; caretHeight: number }) => void;
 };
 
 const viewManagerConfig =
@@ -49,8 +62,9 @@ const NativeGlideRichTextView =
     : null;
 
 export const GlideRichTextEditor = forwardRef<GlideRichTextEditorHandle, GlideRichTextEditorProps>(
-  ({ onChangeText, onChange, onRichSnapshot, ...props }, ref) => {
+  ({ onChangeText, onChange, onRichSnapshot, onSelectionChange, ...props }, ref) => {
     const [snapshotNonce, setSnapshotNonce] = useState(0);
+    const [focusNonce, setFocusNonce] = useState(0);
 
     const handleChange = useCallback(
       (e: NativeChangeEvent) => {
@@ -67,6 +81,18 @@ export const GlideRichTextEditor = forwardRef<GlideRichTextEditorHandle, GlideRi
       [onRichSnapshot]
     );
 
+    const handleSelectionChange = useCallback(
+      (e: NativeSelectionChangeEvent) => {
+        onSelectionChange?.({
+          selectionStart: e.nativeEvent.selectionStart,
+          selectionEnd: e.nativeEvent.selectionEnd,
+          caretY: e.nativeEvent.caretY,
+          caretHeight: e.nativeEvent.caretHeight,
+        });
+      },
+      [onSelectionChange]
+    );
+
     // Prop-based trigger: incrementing snapshotNonce causes the native view to
     // capture an RTF snapshot and fire onRichSnapshot.  This avoids command
     // dispatch which doesn't work through the New Architecture interop layer.
@@ -75,8 +101,7 @@ export const GlideRichTextEditor = forwardRef<GlideRichTextEditorHandle, GlideRi
         setSnapshotNonce(n => n + 1);
       },
       focus: () => {
-        // Focus is managed by the `editable` prop - when editable becomes true,
-        // the parent can use autoFocus or the user taps to place cursor
+        setFocusNonce(n => n + 1);
       },
     }), []);
 
@@ -103,8 +128,10 @@ export const GlideRichTextEditor = forwardRef<GlideRichTextEditorHandle, GlideRi
       <NativeGlideRichTextView
         {...props}
         snapshotNonce={snapshotNonce}
+        focusNonce={focusNonce}
         onChange={handleChange}
         onRichSnapshot={handleRichSnapshot}
+        onSelectionChange={handleSelectionChange}
       />
     );
   }

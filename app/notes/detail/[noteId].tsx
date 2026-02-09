@@ -206,6 +206,9 @@ export default function NoteDetailScreen() {
   const transcriptInputRef = useRef<TextInput>(null);
   const richEditorRef = useRef<GlideRichTextEditorHandle>(null);
   const scrollY = useRef(new Animated.Value(0)).current;
+  const scrollViewRef = useRef<any>(null);
+  const [scrollViewHeight, setScrollViewHeight] = useState(0);
+  const [editorTopY, setEditorTopY] = useState(0);
 
   // Rich editor state
   const richEditorEnabled = useRichEditorEnabled();
@@ -218,6 +221,7 @@ export default function NoteDetailScreen() {
   const [isTitleFocused, setIsTitleFocused] = useState(false);
   const [isTranscriptFocused, setIsTranscriptFocused] = useState(false);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [tagsExpanded, setTagsExpanded] = useState(false);
   const [newTagText, setNewTagText] = useState('');
   const originalTitleRef = useRef<string>(''); // For reverting if user clears title
@@ -226,11 +230,17 @@ export default function NoteDetailScreen() {
   useEffect(() => {
     const showSubscription = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      () => setIsKeyboardVisible(true)
+      (e) => {
+        setIsKeyboardVisible(true);
+        setKeyboardHeight(e.endCoordinates.height);
+      }
     );
     const hideSubscription = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      () => setIsKeyboardVisible(false)
+      () => {
+        setIsKeyboardVisible(false);
+        setKeyboardHeight(0);
+      }
     );
 
     return () => {
@@ -360,6 +370,33 @@ export default function NoteDetailScreen() {
     }, 1500);
   }, [editedTitle, userEditedTitle, debouncedSave]);
 
+  // Auto-scroll so caret sits at ~25% down the visible viewport
+  const handleSelectionChange = useCallback((e: {
+    selectionStart: number;
+    selectionEnd: number;
+    caretY: number;
+    caretHeight: number;
+  }) => {
+    if (!isEditing) return;
+    if (keyboardHeight === 0) return; // No keyboard visible, no scrolling needed
+
+    // caretY is in the native textView's coordinate space (relative to editor top)
+    // caretContentY is the caret's position in the ScrollView's content
+    const caretContentY = editorTopY + e.caretY;
+
+    // Visible area above keyboard
+    const visibleHeight = scrollViewHeight - keyboardHeight;
+    if (visibleHeight <= 0) return;
+
+    // Target: place caret at 25% down the visible area
+    const targetCaretScreenY = visibleHeight * 0.25;
+    const targetScrollY = Math.max(0, caretContentY - targetCaretScreenY);
+
+    // Use the scrollView ref to scroll
+    // @ts-ignore - Animated.ScrollView has scrollTo via getNode or direct
+    scrollViewRef.current?.scrollTo({ y: targetScrollY, animated: true });
+  }, [isEditing, keyboardHeight, scrollViewHeight, editorTopY]);
+
   // Enter edit mode
   const handleEdit = useCallback(() => {
     if (!isAuthenticated) {
@@ -368,9 +405,10 @@ export default function NoteDetailScreen() {
     }
     setIsEditing(true);
     setTagsExpanded(false);
-    // Prefer focusing the editor body (title can be edited explicitly by tapping it).
-    // For the non-native editor, we can focus the transcript TextInput.
-    if (!richEditorEnabled) {
+    if (richEditorEnabled) {
+      // Small delay to let editable prop propagate before focusing
+      setTimeout(() => richEditorRef.current?.focus(), 50);
+    } else {
       setTimeout(() => transcriptInputRef.current?.focus(), 100);
     }
   }, [isAuthenticated, richEditorEnabled]);
@@ -875,6 +913,7 @@ export default function NoteDetailScreen() {
       )}
 
       <Animated.ScrollView
+        ref={scrollViewRef}
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -884,6 +923,7 @@ export default function NoteDetailScreen() {
           { useNativeDriver: false }
         )}
         scrollEventThrottle={16}
+        onLayout={(e: any) => setScrollViewHeight(e.nativeEvent.layout.height)}
       >
         {/* Header with animated collapsing */}
         <View style={styles.header}>
@@ -1064,16 +1104,21 @@ export default function NoteDetailScreen() {
         {/* Transcript - flows naturally below tags/actions */}
         {richEditorEnabled ? (
           // UNIFIED: always render native UITextView, toggle editability
-          <View style={styles.richEditorContainer}>
+          <View
+            style={styles.richEditorContainer}
+            onLayout={(e: any) => setEditorTopY(e.nativeEvent.layout.y)}
+          >
             <GlideRichTextEditor
               ref={richEditorRef}
               rtfBase64={richRtfBase64}
               initialPlaintext={richRtfBase64 ? undefined : editedTranscript}
               editable={isEditing}
-              scrollEnabled={isEditing}
+              scrollEnabled={false}
+              selectable={true}
               autoFocus={false}
               onChangeText={handleTranscriptChange}
               onRichSnapshot={handleRichSnapshot}
+              onSelectionChange={handleSelectionChange}
               placeholder="Start typing..."
               style={styles.richEditor}
             />
