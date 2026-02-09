@@ -1,8 +1,65 @@
 import UIKit
 import React
 
-final class GlideRichTextView: UIView, UITextViewDelegate {
-  private let textView = UITextView()
+// MARK: - FormattingTextView (custom subclass for selection menu)
+
+/// UITextView subclass that injects formatting actions into the native selection menu.
+/// Requires a `formattingDelegate` to call back into GlideRichTextView.
+protocol FormattingTextViewDelegate: AnyObject {
+  func formattingToggleBold()
+  func formattingToggleItalic()
+  func formattingToggleUnderline()
+  func formattingToggleStrikethrough()
+  func formattingToggleHighlight()
+  func formattingClearFormatting()
+  var isFormattingEditable: Bool { get }
+}
+
+final class FormattingTextView: UITextView {
+  weak var formattingDelegate: FormattingTextViewDelegate?
+
+  // MARK: Selection menu via UIMenuBuilder (iOS 16+)
+
+  override func buildMenu(with builder: any UIMenuBuilder) {
+    super.buildMenu(with: builder)
+
+    // Only add formatting when editable and there's a selection
+    guard formattingDelegate?.isFormattingEditable == true,
+          selectedRange.length > 0 else { return }
+
+    let boldAction = UIAction(title: "Bold", image: UIImage(systemName: "bold")) { [weak self] _ in
+      self?.formattingDelegate?.formattingToggleBold()
+    }
+    let italicAction = UIAction(title: "Italic", image: UIImage(systemName: "italic")) { [weak self] _ in
+      self?.formattingDelegate?.formattingToggleItalic()
+    }
+    let underlineAction = UIAction(title: "Underline", image: UIImage(systemName: "underline")) { [weak self] _ in
+      self?.formattingDelegate?.formattingToggleUnderline()
+    }
+    let strikethroughAction = UIAction(title: "Strikethrough", image: UIImage(systemName: "strikethrough")) { [weak self] _ in
+      self?.formattingDelegate?.formattingToggleStrikethrough()
+    }
+    let highlightAction = UIAction(title: "Highlight", image: UIImage(systemName: "highlighter")) { [weak self] _ in
+      self?.formattingDelegate?.formattingToggleHighlight()
+    }
+    let clearAction = UIAction(title: "Clear Formatting", image: UIImage(systemName: "textformat"), attributes: .destructive) { [weak self] _ in
+      self?.formattingDelegate?.formattingClearFormatting()
+    }
+
+    let formattingMenu = UIMenu(
+      title: "Format",
+      image: UIImage(systemName: "textformat"),
+      children: [boldAction, italicAction, underlineAction, strikethroughAction, highlightAction, clearAction]
+    )
+
+    builder.insertSibling(formattingMenu, beforeMenu: .standardEdit)
+  }
+}
+
+// MARK: - GlideRichTextView
+
+final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDelegate {
+  private let textView = FormattingTextView()
   private let placeholderLabel = UILabel()
 
   private var isApplyingContentFromJS = false
@@ -172,9 +229,9 @@ final class GlideRichTextView: UIView, UITextViewDelegate {
   }
 
   @objc var onChange: RCTBubblingEventBlock?
-  @objc var onEditTap: RCTBubblingEventBlock?
+  @objc var onEditTap: RCTDirectEventBlock?
   @objc var onRichSnapshot: RCTBubblingEventBlock?
-  @objc var onSelectionChange: RCTBubblingEventBlock?
+  @objc var onSelectionChange: RCTDirectEventBlock?
 
   // MARK: - Init
 
@@ -221,6 +278,8 @@ final class GlideRichTextView: UIView, UITextViewDelegate {
     placeholderLabel.font = UIFont.preferredFont(forTextStyle: .body)
     placeholderLabel.numberOfLines = 0
     placeholderLabel.isUserInteractionEnabled = false
+
+    textView.formattingDelegate = self
 
     addSubview(textView)
     addSubview(placeholderLabel)
@@ -454,6 +513,38 @@ final class GlideRichTextView: UIView, UITextViewDelegate {
     let onColor = UIColor.systemYellow.withAlphaComponent(0.35)
     toggleTextStyleAttribute(.backgroundColor, onValue: onColor, offValue: UIColor.clear)
   }
+
+  func clearFormatting() {
+#if DEBUG
+    print("[GlideRichTextView] clearFormatting")
+#endif
+    prepareForFormatting()
+    let range = textView.selectedRange
+    guard range.length > 0 else { return }
+
+    let storage = textView.textStorage
+    let defaultFont = UIFont.preferredFont(forTextStyle: .body)
+
+    storage.beginEditing()
+    storage.removeAttribute(.underlineStyle, range: range)
+    storage.removeAttribute(.strikethroughStyle, range: range)
+    storage.removeAttribute(.backgroundColor, range: range)
+    storage.addAttribute(.font, value: defaultFont, range: range)
+    storage.addAttribute(.foregroundColor, value: UIColor.label, range: range)
+    storage.addAttribute(.paragraphStyle, value: defaultParagraphStyle(), range: range)
+    storage.endEditing()
+  }
+
+  // MARK: - FormattingTextViewDelegate
+
+  var isFormattingEditable: Bool { return editable }
+
+  func formattingToggleBold() { toggleBold() }
+  func formattingToggleItalic() { toggleItalic() }
+  func formattingToggleUnderline() { toggleUnderline() }
+  func formattingToggleStrikethrough() { toggleStrikethrough() }
+  func formattingToggleHighlight() { toggleHighlight() }
+  func formattingClearFormatting() { clearFormatting() }
 
   func getRtfBase64() throws -> String {
     let attr = textView.attributedText ?? NSAttributedString(string: "")
