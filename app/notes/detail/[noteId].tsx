@@ -1062,20 +1062,32 @@ export default function NoteDetailScreen() {
         )}
 
         {/* Transcript - flows naturally below tags/actions */}
-        {isEditing ? (
-          richEditorEnabled ? (
+        {richEditorEnabled ? (
+          // UNIFIED: always render native UITextView, toggle editability
+          <View style={styles.richEditorContainer}>
             <GlideRichTextEditor
-              key={richEditorKey}
               ref={richEditorRef}
               rtfBase64={richRtfBase64}
               initialPlaintext={richRtfBase64 ? undefined : editedTranscript}
-              autoFocus
+              editable={isEditing}
+              scrollEnabled={isEditing}
+              autoFocus={false}
               onChangeText={handleTranscriptChange}
               onRichSnapshot={handleRichSnapshot}
               placeholder="Start typing..."
               style={styles.richEditor}
             />
-          ) : (
+            {/* Tap overlay for read mode — captures taps without blocking scroll */}
+            {!isEditing && (
+              <Pressable
+                style={StyleSheet.absoluteFill}
+                onPress={handleEdit}
+              />
+            )}
+          </View>
+        ) : (
+          // Non-rich-editor path (Android, or feature disabled)
+          isEditing ? (
             <TextInput
               ref={transcriptInputRef}
               style={styles.transcriptText}
@@ -1089,11 +1101,11 @@ export default function NoteDetailScreen() {
               textAlignVertical="top"
               inputAccessoryViewID={INPUT_ACCESSORY_ID}
             />
+          ) : (
+            <TouchableOpacity onPress={handleEdit} activeOpacity={0.7}>
+              <MarkdownContent content={note.transcript} />
+            </TouchableOpacity>
           )
-        ) : (
-          <TouchableOpacity onPress={handleEdit} activeOpacity={0.7}>
-            <MarkdownContent content={note.transcript} />
-          </TouchableOpacity>
         )}
       </Animated.ScrollView>
 
@@ -1456,6 +1468,10 @@ const styles = StyleSheet.create({
   richEditor: {
     minHeight: 300,
     marginTop: 8,
+  },
+  richEditorContainer: {
+    position: 'relative',
+    minHeight: 200,
   },
   // Input History styles
   inputHistorySection: {

@@ -23,12 +23,15 @@ type NativeProps = ViewProps & {
   rtfBase64?: string;
   snapshotNonce?: number;
   autoFocus?: boolean;
+  editable?: boolean;
+  scrollEnabled?: boolean;
   onChange?: (e: NativeChangeEvent) => void;
   onRichSnapshot?: (e: { nativeEvent: { rtfBase64: string } }) => void;
 };
 
 export type GlideRichTextEditorHandle = {
   requestRtfSnapshot: () => void;
+  focus: () => void;
 };
 
 export type GlideRichTextEditorProps = Omit<NativeProps, 'onChange' | 'onRichSnapshot' | 'snapshotNonce'> & {
@@ -70,6 +73,10 @@ export const GlideRichTextEditor = forwardRef<GlideRichTextEditorHandle, GlideRi
     useImperativeHandle(ref, () => ({
       requestRtfSnapshot: () => {
         setSnapshotNonce(n => n + 1);
+      },
+      focus: () => {
+        // Focus is managed by the `editable` prop - when editable becomes true,
+        // the parent can use autoFocus or the user taps to place cursor
       },
     }), []);
 

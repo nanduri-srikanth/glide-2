@@ -58,8 +58,17 @@ final class GlideRichTextView: UIView, UITextViewDelegate {
         isApplyingContentFromJS = true
         lastAppliedRtfBase64 = next
         textView.attributedText = attr
+        // After setting attributedText, normalize paragraph style for visual consistency
+        let mutable = NSMutableAttributedString(attributedString: textView.attributedText ?? NSAttributedString())
+        let fullRange = NSRange(location: 0, length: mutable.length)
+        if fullRange.length > 0 {
+          mutable.addAttribute(.paragraphStyle, value: defaultParagraphStyle(), range: fullRange)
+          let savedRange = textView.selectedRange
+          textView.attributedText = mutable
+          textView.selectedRange = savedRange
+        }
         // Move cursor to end.
-        let end = NSRange(location: attr.length, length: 0)
+        let end = NSRange(location: (textView.attributedText?.length ?? attr.length), length: 0)
         textView.selectedRange = end
         lastSelectedRange = end
         isApplyingContentFromJS = false
@@ -82,6 +91,13 @@ final class GlideRichTextView: UIView, UITextViewDelegate {
       hasAppliedInitialPlaintext = true
       isApplyingContentFromJS = true
       textView.text = next
+      // After setting text, apply paragraph style
+      let mutable = NSMutableAttributedString(attributedString: textView.attributedText ?? NSAttributedString())
+      let fullRange = NSRange(location: 0, length: mutable.length)
+      if fullRange.length > 0 {
+        mutable.addAttribute(.paragraphStyle, value: defaultParagraphStyle(), range: fullRange)
+        textView.attributedText = mutable
+      }
       isApplyingContentFromJS = false
       updatePlaceholderVisibility()
 #if DEBUG
@@ -94,6 +110,7 @@ final class GlideRichTextView: UIView, UITextViewDelegate {
   @objc var autoFocus: Bool = false {
     didSet {
       if !autoFocus { return }
+      guard editable else { return }  // Don't auto-focus when not editable
       if hasAutoFocused { return }
       hasAutoFocused = true
       DispatchQueue.main.async { [weak self] in
@@ -112,6 +129,24 @@ final class GlideRichTextView: UIView, UITextViewDelegate {
         lastSnapshotNonce = nonce
         requestRtfSnapshot()
       }
+    }
+  }
+
+  @objc var editable: Bool = true {
+    didSet {
+      textView.isEditable = editable
+      // Hide/show the formatting toolbar when toggling editability
+      textView.inputAccessoryView = editable ? accessoryToolbar : nil
+      // Reloading inputAccessoryView requires resigning/becoming first responder
+      if textView.isFirstResponder {
+        textView.reloadInputViews()
+      }
+    }
+  }
+
+  @objc var scrollEnabled: Bool = true {
+    didSet {
+      textView.isScrollEnabled = scrollEnabled
     }
   }
 
@@ -153,6 +188,11 @@ final class GlideRichTextView: UIView, UITextViewDelegate {
     // Default typing attributes (can be customized later).
     textView.font = UIFont.preferredFont(forTextStyle: .body)
     textView.textColor = .label
+    textView.typingAttributes = [
+      .font: UIFont.preferredFont(forTextStyle: .body),
+      .foregroundColor: UIColor.label,
+      .paragraphStyle: defaultParagraphStyle(),
+    ]
 
     placeholderLabel.textColor = .secondaryLabel
     placeholderLabel.font = UIFont.preferredFont(forTextStyle: .body)
@@ -163,6 +203,16 @@ final class GlideRichTextView: UIView, UITextViewDelegate {
     addSubview(placeholderLabel)
 
     updatePlaceholderVisibility()
+  }
+
+  /// Shared paragraph style used for both typing and loaded content.
+  /// Matches the visual rhythm of the read-mode Markdown renderer.
+  private func defaultParagraphStyle() -> NSMutableParagraphStyle {
+    let style = NSMutableParagraphStyle()
+    style.lineSpacing = 4            // extra space between wrapped lines
+    style.paragraphSpacing = 8       // space between paragraphs
+    style.lineHeightMultiple = 1.15  // consistent line height
+    return style
   }
 
   private func makeAccessoryToolbar() -> UIToolbar {
