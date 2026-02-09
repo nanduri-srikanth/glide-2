@@ -651,10 +651,22 @@ async def add_to_synthesis(
         ai_metadata["input_history"] = input_history
         ai_metadata["last_input_at"] = now.isoformat()
 
+        # Fetch user's folders for smart categorization
+        folders_result = await db.execute(
+            select(Folder.name)
+            .where(Folder.user_id == current_user.id)
+            .where(Folder.is_system == False)
+            .order_by(Folder.sort_order)
+        )
+        user_folders = [row[0] for row in folders_result.fetchall()]
+        if not user_folders:
+            user_folders = ['Work', 'Personal', 'Ideas']
+
         llm_service = LLMService()
         user_context = {
             "timezone": current_user.timezone,
             "current_date": now.strftime("%Y-%m-%d"),
+            "folders": user_folders,
         }
 
         # Track the decision made
@@ -928,10 +940,22 @@ async def resynthesize_note(
                 "audio_key": None,
             }]
 
+        # Fetch user's folders for smart categorization
+        folders_result = await db.execute(
+            select(Folder.name)
+            .where(Folder.user_id == current_user.id)
+            .where(Folder.is_system == False)
+            .order_by(Folder.sort_order)
+        )
+        user_folders = [row[0] for row in folders_result.fetchall()]
+        if not user_folders:
+            user_folders = ['Work', 'Personal', 'Ideas']
+
         llm_service = LLMService()
         user_context = {
             "timezone": current_user.timezone,
             "current_date": now.strftime("%Y-%m-%d"),
+            "folders": user_folders,
         }
 
         # Use COMPREHENSIVE synthesis to preserve all information
@@ -1063,11 +1087,23 @@ async def delete_input(
         if deleted_input.get("duration"):
             note.duration = max(0, (note.duration or 0) - deleted_input.get("duration", 0))
 
+        # Fetch user's folders for smart categorization
+        folders_result = await db.execute(
+            select(Folder.name)
+            .where(Folder.user_id == current_user.id)
+            .where(Folder.is_system == False)
+            .order_by(Folder.sort_order)
+        )
+        user_folders = [row[0] for row in folders_result.fetchall()]
+        if not user_folders:
+            user_folders = ['Work', 'Personal', 'Ideas']
+
         # Re-synthesize from remaining inputs (comprehensive to preserve info)
         llm_service = LLMService()
         user_context = {
             "timezone": current_user.timezone,
             "current_date": now.strftime("%Y-%m-%d"),
+            "folders": user_folders,
         }
 
         synthesis = await llm_service.resynthesize_content(
@@ -1206,11 +1242,23 @@ async def append_to_note(
             filename=audio_file.filename or "recording_append.mp3",
         )
 
+        # Fetch user's folders for smart categorization
+        folders_result = await db.execute(
+            select(Folder.name)
+            .where(Folder.user_id == current_user.id)
+            .where(Folder.is_system == False)
+            .order_by(Folder.sort_order)
+        )
+        user_folders = [row[0] for row in folders_result.fetchall()]
+        if not user_folders:
+            user_folders = ['Work', 'Personal', 'Ideas']
+
         # 4. Extract ONLY NEW actions using context-aware LLM method
         llm_service = LLMService()
         user_context = {
             "timezone": current_user.timezone,
             "current_date": datetime.utcnow().strftime("%Y-%m-%d"),
+            "folders": user_folders,
         }
         extraction = await llm_service.extract_actions_for_append(
             new_transcript=transcription.text,
@@ -1387,15 +1435,28 @@ async def transcribe_only(
 async def analyze_transcript(
     current_user: Annotated[User, Depends(get_current_user)],
     transcript: str = Form(...),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Analyze a transcript and extract actions (for preview/re-analysis).
     """
     try:
+        # Fetch user's folders for smart categorization
+        folders_result = await db.execute(
+            select(Folder.name)
+            .where(Folder.user_id == current_user.id)
+            .where(Folder.is_system == False)
+            .order_by(Folder.sort_order)
+        )
+        user_folders = [row[0] for row in folders_result.fetchall()]
+        if not user_folders:
+            user_folders = ['Work', 'Personal', 'Ideas']
+
         llm_service = LLMService()
         user_context = {
             "timezone": current_user.timezone,
             "current_date": datetime.utcnow().strftime("%Y-%m-%d"),
+            "folders": user_folders,
         }
 
         extraction = await llm_service.extract_actions(

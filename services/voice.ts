@@ -79,6 +79,20 @@ export interface OpenLoop {
   context: string | null;
 }
 
+export interface FormatSignals {
+  has_discrete_items: boolean;
+  has_sequential_steps: boolean;
+  has_action_items: boolean;
+  is_reflective: boolean;
+  topic_count: number;
+  tone: string;
+}
+
+export interface FormatComposition {
+  format_signals: FormatSignals;
+  format_recipe: string;
+}
+
 export interface ReminderAction {
   title: string;
   due_date: string;
@@ -107,6 +121,7 @@ export interface ActionExtractionResult {
   tags: string[];
   summary: string | null;
   type_detection?: TypeDetection;
+  format_composition?: FormatComposition;
   related_entities?: RelatedEntities;
   open_loops?: OpenLoop[];
   calendar: CalendarAction[];

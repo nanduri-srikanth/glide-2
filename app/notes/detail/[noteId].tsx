@@ -45,6 +45,7 @@ import { useRichEditorEnabled } from '@/hooks/useRichEditorEnabled';
 import { richContentRepository, noteVersionsRepository } from '@/lib/repositories';
 import { DiffReviewModal } from '@/components/notes/DiffReviewModal';
 import { historyService, type SynthesizeResponse } from '@/services/history';
+import type { FormatType } from '@/components/notes/FormattingToolbar';
 
 
 // Convert mock note actions to server action format for the useActionDrafts hook

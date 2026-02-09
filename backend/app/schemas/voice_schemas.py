@@ -2,12 +2,12 @@
 from datetime import datetime
 from typing import Optional, List, Literal
 from uuid import UUID
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class TranscriptionResult(BaseModel):
     """Schema for transcription result."""
-    text: str
+    text: str = Field(..., max_length=50000)
     language: str
     duration: int  # in seconds
     confidence: Optional[float] = None
@@ -70,6 +70,22 @@ class OpenLoop(BaseModel):
     context: Optional[str] = None
 
 
+class FormatSignals(BaseModel):
+    """Content signals detected for format composition."""
+    has_discrete_items: bool = False
+    has_sequential_steps: bool = False
+    has_action_items: bool = False
+    is_reflective: bool = False
+    topic_count: int = 1
+    tone: str = "casual"  # casual | professional | urgent | reflective | excited | frustrated
+
+
+class FormatComposition(BaseModel):
+    """Signal-based format composition replacing rigid type detection."""
+    format_signals: FormatSignals
+    format_recipe: str  # e.g. "prose_intro + bullet_list + checklist"
+
+
 class ActionExtractionResult(BaseModel):
     """Schema for AI action extraction result.
 
@@ -81,6 +97,7 @@ class ActionExtractionResult(BaseModel):
     tags: List[str]
     summary: Optional[str] = None
     type_detection: Optional[TypeDetection] = None
+    format_composition: Optional[FormatComposition] = None
     related_entities: Optional[RelatedEntities] = None
     open_loops: List[OpenLoop] = []
     calendar: List[CalendarActionExtracted] = []
@@ -131,6 +148,7 @@ class SynthesisResult(BaseModel):
     tags: List[str]
     summary: Optional[str] = None
     type_detection: Optional[TypeDetection] = None
+    format_composition: Optional[FormatComposition] = None
     related_entities: Optional[RelatedEntities] = None
     open_loops: List[OpenLoop] = []
     calendar: List[CalendarActionExtracted] = []
