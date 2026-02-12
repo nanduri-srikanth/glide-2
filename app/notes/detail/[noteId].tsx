@@ -47,6 +47,8 @@ import { DiffReviewModal } from '@/components/notes/DiffReviewModal';
 import { historyService, type SynthesizeResponse } from '@/services/history';
 import type { FormatType } from '@/components/notes/FormattingToolbar';
 import { MathToolbar } from '@/components/notes/MathToolbar';
+import { NotesBackButton } from '@/components/notes/NotesBackButton';
+import { IconSymbol } from '@/components/ui/icon-symbol';
 
 
 // Convert mock note actions to server action format for the useActionDrafts hook
@@ -289,15 +291,43 @@ export default function NoteDetailScreen() {
   // Load persisted RTF content when note opens (rich editor only)
   useEffect(() => {
     if (!richEditorEnabled || !noteId) return;
+    if (isEditing) return;
     let cancelled = false;
-    richContentRepository.get(noteId).then((row) => {
-      if (cancelled) return;
-      if (row) {
+
+    (async () => {
+      try {
+        const row = await richContentRepository.get(noteId);
+        if (cancelled) return;
+
+        if (!row) {
+          setRichRtfBase64(undefined);
+          // Force native view to reload new initialMarkdown content.
+          setRichEditorKey(prev => prev + 1);
+          return;
+        }
+
+        const currentPlain = note?.transcript ?? '';
+        const storedPlain = row.plaintext ?? '';
+
+        // If the note transcript changed outside the rich editor, the saved RTF can go stale.
+        // Drop it so we render from the latest plain transcript.
+        if (storedPlain !== currentPlain) {
+          setRichRtfBase64(undefined);
+          setRichEditorKey(prev => prev + 1);
+          richContentRepository.delete(noteId).catch(console.warn);
+          return;
+        }
+
         setRichRtfBase64(row.rtf_base64);
+        // Force native view to reload from the (possibly updated) RTF snapshot.
+        setRichEditorKey(prev => prev + 1);
+      } catch (err) {
+        console.warn(err);
       }
-    }).catch(console.warn);
+    })();
+
     return () => { cancelled = true; };
-  }, [richEditorEnabled, noteId]);
+  }, [richEditorEnabled, noteId, note?.transcript, isEditing]);
 
   // Debounced auto-save function
   const debouncedSave = useCallback(async (title: string, transcript: string) => {
@@ -880,6 +910,26 @@ export default function NoteDetailScreen() {
     );
   };
 
+  const handleUndoLocalChanges = useCallback(() => {
+    if (!note) return;
+
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    setEditedTitle(note.title);
+    setEditedTranscript(note.transcript);
+    originalTitleRef.current = note.title;
+    setUserEditedTitle(isUserSetTitle(note.title));
+    setHasUnsavedChanges(false);
+
+    // Force rich editor to reload from the latest server-backed plain content.
+    if (richEditorEnabled) {
+      setRichRtfBase64(undefined);
+      setRichEditorKey(prev => prev + 1);
+    }
+  }, [note, richEditorEnabled]);
+
   // Calculate action counts for the floating bar (excluding deleted)
   const actionCounts: ActionCounts = {
     calendar: editableCalendarActions.filter(a => !a.isDeleted).length,
@@ -904,7 +954,7 @@ export default function NoteDetailScreen() {
             </Animated.Text>
           ),
           headerLeft: () => (
-            <TouchableOpacity
+            <NotesBackButton
               onPress={async () => {
                 if (isEditing) {
                   await handleDoneEditing();
@@ -917,18 +967,36 @@ export default function NoteDetailScreen() {
                   router.navigate('/');
                 }
               }}
-              style={styles.headerBackButton}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="Back"
-            >
-              <Ionicons name="chevron-back" size={26} color={NotesColors.primary} />
-            </TouchableOpacity>
+            />
           ),
           headerRight: () => (
-            <TouchableOpacity onPress={() => setShowOptionsMenu(true)} style={styles.headerButton}>
-              <Ionicons name="ellipsis-vertical" size={24} color={NotesColors.primary} />
-            </TouchableOpacity>
+            <View style={styles.headerRightContainer}>
+              {hasUnsavedChanges && (
+                <TouchableOpacity
+                  onPress={handleUndoLocalChanges}
+                  style={styles.headerActionButton}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel="Undo changes"
+                >
+                  <IconSymbol
+                    name="arrow.uturn.backward"
+                    size={22}
+                    color="#111111"
+                    weight="medium"
+                  />
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                onPress={() => setShowOptionsMenu(true)}
+                style={styles.headerActionButton}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="More options"
+              >
+                <Ionicons name="ellipsis-vertical" size={24} color={NotesColors.primary} />
+              </TouchableOpacity>
+            </View>
           ),
         }}
       />
@@ -1153,6 +1221,7 @@ export default function NoteDetailScreen() {
             onLayout={(e: any) => setEditorTopY(e.nativeEvent.layout.y)}
           >
             <GlideRichTextEditor
+              key={richEditorKey}
               ref={richEditorRef}
               rtfBase64={richRtfBase64}
               initialMarkdown={richRtfBase64 ? undefined : editedTranscript}
@@ -1405,23 +1474,11 @@ const styles = StyleSheet.create({
     fontSize: 17,
     color: NotesColors.textSecondary,
   },
-  headerButton: {
-    padding: 8,
-  },
-  headerBackButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  headerActionButton: {
+    width: 32,
+    height: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: NotesColors.card,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: NotesColors.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 2,
   },
   navBarTitle: {
     fontSize: 17,
@@ -1433,6 +1490,7 @@ const styles = StyleSheet.create({
   headerRightContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 2,
   },
   savingIndicator: {
     flexDirection: 'row',

@@ -150,8 +150,11 @@ export default function RecordingScreen() {
       }
     }
 
-    // Invalidate queries to refresh list + counts
+    // Invalidate queries to refresh list + counts (and detail, if applicable)
     queryClient.invalidateQueries({ queryKey: queryKeys.notes.lists() });
+    if (noteId) {
+      queryClient.invalidateQueries({ queryKey: queryKeys.notes.detail(noteId) });
+    }
     queryClient.invalidateQueries({ queryKey: queryKeys.folders.all });
   };
 
@@ -343,6 +346,8 @@ export default function RecordingScreen() {
       );
 
       if (data) {
+        // Update local state/cache so note detail reflects the append immediately.
+        await refreshNotesAfterSynthesis(data.note_id);
         fetchFolders();
         showSuccessAndNavigateBack(`Added to "${targetNote.title}"`);
       } else {

@@ -1,10 +1,19 @@
 import { Stack, useRouter } from 'expo-router';
-import { TouchableOpacity, View, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { NotesColors } from '@/constants/theme';
+import { NotesBackButton } from '@/components/notes/NotesBackButton';
 
 export default function NotesLayout() {
   const router = useRouter();
+
+  const handleBack = () => {
+    if (router.canDismiss()) {
+      router.dismiss();
+    } else if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.navigate('/');
+    }
+  };
 
   return (
     <Stack
@@ -20,6 +29,10 @@ export default function NotesLayout() {
         contentStyle: {
           backgroundColor: NotesColors.background,
         },
+        headerBackVisible: false,
+        headerLeft: () => (
+          <NotesBackButton onPress={handleBack} />
+        ),
       }}
     >
       <Stack.Screen
@@ -29,25 +42,6 @@ export default function NotesLayout() {
           headerLargeTitleStyle: {
             color: NotesColors.textPrimary,
           },
-          headerLeft: () => (
-            <TouchableOpacity
-              onPress={() => {
-                if (router.canDismiss()) {
-                  router.dismiss();
-                } else if (router.canGoBack()) {
-                  router.back();
-                } else {
-                  router.navigate('/');
-                }
-              }}
-              style={styles.backButton}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="Back"
-            >
-              <Ionicons name="chevron-back" size={26} color={NotesColors.primary} />
-            </TouchableOpacity>
-          ),
         }}
       />
       <Stack.Screen
@@ -64,7 +58,6 @@ export default function NotesLayout() {
         name="detail/transcript/[noteId]"
         options={{
           title: 'Full Transcript',
-          headerBackVisible: true,
           headerShadowVisible: false,
         }}
       />
@@ -72,28 +65,9 @@ export default function NotesLayout() {
         name="detail/history/[noteId]"
         options={{
           title: 'Version History',
-          headerBackVisible: true,
           headerShadowVisible: false,
         }}
       />
     </Stack>
   );
 }
-
-const styles = StyleSheet.create({
-  backButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: NotesColors.card,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: NotesColors.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-});

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -6,6 +6,9 @@ import {
   ScrollView,
   SafeAreaView,
   ActivityIndicator,
+  TouchableOpacity,
+  Animated,
+  Dimensions,
 } from 'react-native';
 import { useLocalSearchParams, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,6 +16,9 @@ import { NotesColors } from '@/constants/theme';
 import { noteInputsRepository } from '@/lib/repositories';
 import { notesService } from '@/services/notes';
 import type { NoteInputRow } from '@/lib/database/schema';
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+const INPUT_SHEET_HEIGHT = Math.min(SCREEN_HEIGHT * 0.82, 720);
 
 function formatRelativeTime(dateStr: string): string {
   const now = Date.now();
@@ -65,11 +71,179 @@ function getTypeBackgroundColor(type: string): string {
   }
 }
 
+function getPreviewText(input: NoteInputRow): string {
+  if (input.text_plain && input.text_plain.trim().length > 0) return input.text_plain.trim();
+  if (input.type === 'audio') return 'Audio input';
+  return 'No text content available';
+}
+
+function TranscriptInputSheet({
+  input,
+  visible,
+  onClose,
+}: {
+  input: NoteInputRow | null;
+  visible: boolean;
+  onClose: () => void;
+}) {
+  const slideAnim = useRef(new Animated.Value(INPUT_SHEET_HEIGHT)).current;
+  const backdropOpacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!input) return;
+
+    if (visible) {
+      Animated.parallel([
+        Animated.spring(slideAnim, {
+          toValue: 0,
+          useNativeDriver: false,
+          tension: 65,
+          friction: 11,
+        }),
+        Animated.timing(backdropOpacity, {
+          toValue: 1,
+          duration: 180,
+          useNativeDriver: false,
+        }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(slideAnim, {
+          toValue: INPUT_SHEET_HEIGHT,
+          duration: 220,
+          useNativeDriver: false,
+        }),
+        Animated.timing(backdropOpacity, {
+          toValue: 0,
+          duration: 180,
+          useNativeDriver: false,
+        }),
+      ]).start();
+    }
+  }, [visible, input, slideAnim, backdropOpacity]);
+
+  if (!input) return null;
+
+  const contentText = input.text_plain
+    ? input.text_plain
+    : input.type === 'audio'
+      ? 'Audio — transcription included in note body'
+      : 'No text content available';
+
+  return (
+    <View style={styles.sheetOverlay}>
+      <Animated.View
+        style={[styles.sheetBackdrop, { opacity: backdropOpacity }]}
+      />
+      <TouchableOpacity
+        style={styles.sheetBackdropTouch}
+        onPress={onClose}
+        activeOpacity={1}
+      />
+
+      <Animated.View
+        style={[
+          styles.sheet,
+          {
+            height: INPUT_SHEET_HEIGHT,
+            transform: [{ translateY: slideAnim }],
+          },
+        ]}
+      >
+        <View style={styles.sheetHandleBar} />
+
+        <View style={styles.sheetHeader}>
+          <TouchableOpacity
+            onPress={onClose}
+            style={styles.sheetCloseButton}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="close" size={24} color={NotesColors.textSecondary} />
+          </TouchableOpacity>
+          <Text style={styles.sheetTitle}>Input</Text>
+          <View style={styles.sheetHeaderPlaceholder} />
+        </View>
+
+        <View style={styles.sheetMetaRow}>
+          <View
+            style={[
+              styles.typeIconCircle,
+              { backgroundColor: getTypeBackgroundColor(input.type) },
+            ]}
+          >
+            <Ionicons
+              name={getTypeIcon(input.type)}
+              size={14}
+              color={getTypeColor(input.type)}
+            />
+          </View>
+
+          <View style={styles.sheetMetaText}>
+            <Text style={styles.typeLabel}>
+              {input.type.charAt(0).toUpperCase() + input.type.slice(1)}
+            </Text>
+            <Text style={styles.timestamp}>{formatRelativeTime(input.created_at)}</Text>
+          </View>
+
+          <View
+            style={[
+              styles.sourceBadge,
+              input.source === 'ai' ? styles.sourceBadgeAi : styles.sourceBadgeUser,
+            ]}
+          >
+            <Text
+              style={[
+                styles.sourceBadgeText,
+                input.source === 'ai'
+                  ? styles.sourceBadgeTextAi
+                  : styles.sourceBadgeTextUser,
+              ]}
+            >
+              {input.source}
+            </Text>
+          </View>
+        </View>
+
+        <ScrollView
+          style={styles.sheetBody}
+          contentContainerStyle={styles.sheetBodyContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <Text style={styles.sheetContentText} selectable>
+            {contentText}
+          </Text>
+        </ScrollView>
+      </Animated.View>
+    </View>
+  );
+}
+
 export default function FullTranscriptScreen() {
   const { noteId } = useLocalSearchParams<{ noteId: string }>();
   const [inputs, setInputs] = useState<NoteInputRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [fromServer, setFromServer] = useState(false);
+  const [selectedInput, setSelectedInput] = useState<NoteInputRow | null>(null);
+  const [isSheetVisible, setIsSheetVisible] = useState(false);
+  const clearSelectedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const openInput = useCallback((input: NoteInputRow) => {
+    if (clearSelectedTimer.current) {
+      clearTimeout(clearSelectedTimer.current);
+      clearSelectedTimer.current = null;
+    }
+    setSelectedInput(input);
+    setIsSheetVisible(true);
+  }, []);
+
+  const closeSheet = useCallback(() => {
+    setIsSheetVisible(false);
+    if (clearSelectedTimer.current) clearTimeout(clearSelectedTimer.current);
+    clearSelectedTimer.current = setTimeout(() => {
+      setSelectedInput(null);
+      clearSelectedTimer.current = null;
+    }, 240);
+  }, []);
 
   useEffect(() => {
     if (!noteId) return;
@@ -124,11 +298,17 @@ export default function FullTranscriptScreen() {
     };
   }, [noteId]);
 
+  useEffect(() => {
+    return () => {
+      if (clearSelectedTimer.current) clearTimeout(clearSelectedTimer.current);
+    };
+  }, []);
+
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container}>
         <Stack.Screen
-          options={{ title: 'Full Transcript', headerBackTitle: 'Back' }}
+          options={{ title: 'Full Transcript' }}
         />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={NotesColors.primary} />
@@ -141,7 +321,7 @@ export default function FullTranscriptScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <Stack.Screen
-          options={{ title: 'Full Transcript', headerBackTitle: 'Back' }}
+          options={{ title: 'Full Transcript' }}
         />
         <View style={styles.emptyContainer}>
           <View style={styles.emptyIconCircle}>
@@ -164,7 +344,7 @@ export default function FullTranscriptScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <Stack.Screen
-        options={{ title: 'Full Transcript', headerBackTitle: 'Back' }}
+        options={{ title: 'Full Transcript' }}
       />
 
       <ScrollView
@@ -184,8 +364,12 @@ export default function FullTranscriptScreen() {
         )}
 
         {inputs.map((input) => (
-          <View key={input.id} style={styles.card}>
-            {/* Card header row */}
+          <TouchableOpacity
+            key={input.id}
+            style={styles.card}
+            onPress={() => openInput(input)}
+            activeOpacity={0.8}
+          >
             <View style={styles.cardHeader}>
               <View
                 style={[
@@ -230,21 +414,25 @@ export default function FullTranscriptScreen() {
               </View>
             </View>
 
-            {/* Content body */}
-            {input.text_plain ? (
-              <Text style={styles.contentText}>{input.text_plain}</Text>
-            ) : input.type === 'audio' ? (
-              <Text style={styles.contentPlaceholder}>
-                Audio — transcription included in note body
-              </Text>
-            ) : (
-              <Text style={styles.contentPlaceholder}>
-                No text content available
-              </Text>
-            )}
-          </View>
+            <Text
+              style={input.text_plain ? styles.previewText : styles.contentPlaceholder}
+              numberOfLines={3}
+            >
+              {getPreviewText(input)}
+            </Text>
+
+            <View style={styles.expandAffordanceRow}>
+              <Ionicons name="chevron-up" size={14} color={NotesColors.textSecondary} />
+            </View>
+          </TouchableOpacity>
         ))}
       </ScrollView>
+
+      <TranscriptInputSheet
+        input={selectedInput}
+        visible={isSheetVisible}
+        onClose={closeSheet}
+      />
     </SafeAreaView>
   );
 }
@@ -391,9 +579,97 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: NotesColors.textPrimary,
   },
+  previewText: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: NotesColors.textPrimary,
+  },
   contentPlaceholder: {
     fontSize: 14,
     fontStyle: 'italic',
     color: NotesColors.textSecondary,
+  },
+
+  // Tray sheet
+  sheetOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'flex-end',
+    zIndex: 100,
+  },
+  sheetBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    zIndex: 0,
+  },
+  sheetBackdropTouch: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 1,
+  },
+  sheet: {
+    backgroundColor: NotesColors.card,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: 34,
+    zIndex: 2,
+  },
+  sheetHandleBar: {
+    width: 36,
+    height: 5,
+    backgroundColor: NotesColors.textSecondary,
+    borderRadius: 3,
+    alignSelf: 'center',
+    marginTop: 8,
+    marginBottom: 12,
+    opacity: 0.6,
+  },
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+  },
+  sheetCloseButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sheetTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: NotesColors.textPrimary,
+  },
+  sheetHeaderPlaceholder: {
+    width: 44,
+    height: 44,
+  },
+  sheetMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    gap: 10,
+  },
+  sheetMetaText: {
+    flex: 1,
+  },
+  sheetBody: {
+    flex: 1,
+  },
+  sheetBodyContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 24,
+  },
+  sheetContentText: {
+    fontSize: 16,
+    lineHeight: 24,
+    color: NotesColors.textPrimary,
+  },
+  expandAffordanceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    marginTop: 10,
   },
 });

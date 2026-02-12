@@ -141,7 +141,8 @@ class SyncEngine {
           console.log('[SyncEngine] Synced:', item.entity_type, item.entity_id, item.operation);
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-          console.error('[SyncEngine] Failed to sync:', item.entity_type, item.entity_id, errorMessage);
+          // Sync errors are important, but should not take over the UI in dev.
+          console.warn('[SyncEngine] Failed to sync:', item.entity_type, item.entity_id, errorMessage);
           await syncQueueService.markFailed(item.id, errorMessage);
           this.lastError = errorMessage;
         }
@@ -312,7 +313,8 @@ class SyncEngine {
       const { data, error } = result as { data?: Pick<NoteListResponse, 'items' | 'pages'>; error?: string };
 
       if (error) {
-        console.error('[SyncEngine] Failed to fetch notes:', error);
+        // In React Native dev, console.error triggers a RedBox. This is a non-fatal background sync failure.
+        console.warn('[SyncEngine] Failed to fetch notes:', error);
         return;
       }
 
@@ -357,7 +359,8 @@ class SyncEngine {
         }
       }
     } catch (error) {
-      console.error('[SyncEngine] Notes sync failed:', error);
+      // Non-fatal background sync failure; avoid crashing the dev UX with a RedBox.
+      console.warn('[SyncEngine] Notes sync failed:', error);
     }
   }
 
@@ -376,7 +379,8 @@ class SyncEngine {
       const { data, error } = await notesService.listFolders();
 
       if (error) {
-        console.error('[SyncEngine] Failed to fetch folders:', error);
+        // Non-fatal background sync failure; avoid triggering a RedBox in dev.
+        console.warn('[SyncEngine] Failed to fetch folders:', error);
         return;
       }
 
@@ -400,7 +404,8 @@ class SyncEngine {
         }
       }
     } catch (error) {
-      console.error('[SyncEngine] Folders sync failed:', error);
+      // Non-fatal background sync failure; avoid crashing the dev UX with a RedBox.
+      console.warn('[SyncEngine] Folders sync failed:', error);
     }
   }
 

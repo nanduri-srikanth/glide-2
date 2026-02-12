@@ -371,7 +371,6 @@ export default function VersionHistoryScreen() {
       <Stack.Screen
         options={{
           title: 'Version History',
-          headerBackVisible: true,
           headerShadowVisible: false,
         }}
       />
