@@ -1,4 +1,4 @@
-import React, { forwardRef, useCallback, useImperativeHandle, useRef, useState } from 'react';
+import React, { forwardRef, useCallback, useImperativeHandle, useState } from 'react';
 import {
   Platform,
   requireNativeComponent,
@@ -31,6 +31,13 @@ type NativeContentSizeChangeEvent = {
   };
 };
 
+type NativeUndoStateChangeEvent = {
+  nativeEvent: {
+    canUndo: boolean;
+    canRedo: boolean;
+  };
+};
+
 type NativeEditTapEvent = {
   nativeEvent: {
     tapOffset: number;
@@ -50,25 +57,31 @@ type NativeProps = ViewProps & {
   scrollEnabled?: boolean;
   selectable?: boolean;
   focusNonce?: number;
+  undoNonce?: number;
+  redoNonce?: number;
   onChange?: (e: NativeChangeEvent) => void;
   onRichSnapshot?: (e: { nativeEvent: { rtfBase64: string } }) => void;
   onSelectionChange?: (e: NativeSelectionChangeEvent) => void;
   onEditTap?: (e: NativeEditTapEvent) => void;
   onContentSizeChange?: (e: NativeContentSizeChangeEvent) => void;
+  onUndoStateChange?: (e: NativeUndoStateChangeEvent) => void;
 };
 
 export type GlideRichTextEditorHandle = {
   requestRtfSnapshot: () => void;
   focus: () => void;
+  undo: () => void;
+  redo: () => void;
 };
 
-export type GlideRichTextEditorProps = Omit<NativeProps, 'onChange' | 'onRichSnapshot' | 'snapshotNonce' | 'focusNonce' | 'onSelectionChange' | 'onEditTap' | 'onContentSizeChange'> & {
+export type GlideRichTextEditorProps = Omit<NativeProps, 'onChange' | 'onRichSnapshot' | 'snapshotNonce' | 'focusNonce' | 'undoNonce' | 'redoNonce' | 'onSelectionChange' | 'onEditTap' | 'onContentSizeChange' | 'onUndoStateChange'> & {
   onChangeText?: (text: string) => void;
   onChange?: (e: NativeChangeEvent) => void;
   onRichSnapshot?: (rtfBase64: string) => void;
   onSelectionChange?: (e: { selectionStart: number; selectionEnd: number; caretY: number; caretHeight: number }) => void;
   onEditTap?: (e: { tapOffset: number; tapY: number }) => void;
   onContentSizeChange?: (e: { height: number }) => void;
+  onUndoStateChange?: (e: { canUndo: boolean; canRedo: boolean }) => void;
 };
 
 const viewManagerConfig =
@@ -81,7 +94,7 @@ const NativeGlideRichTextView =
 
 // Dev-only: warn if the native view manager is missing expected props
 if (__DEV__ && viewManagerConfig) {
-  const expectedProps = ['focusNonce', 'onSelectionChange', 'onEditTap', 'onContentSizeChange', 'selectable', 'initialMarkdown'];
+  const expectedProps = ['focusNonce', 'undoNonce', 'redoNonce', 'onSelectionChange', 'onEditTap', 'onContentSizeChange', 'onUndoStateChange', 'selectable', 'initialMarkdown'];
   const nativeProps = (viewManagerConfig as any).NativeProps || {};
   const missing = expectedProps.filter(p => !(p in nativeProps));
   if (missing.length > 0) {
@@ -93,9 +106,11 @@ if (__DEV__ && viewManagerConfig) {
 }
 
 export const GlideRichTextEditor = forwardRef<GlideRichTextEditorHandle, GlideRichTextEditorProps>(
-  ({ onChangeText, onChange, onRichSnapshot, onSelectionChange, onEditTap, onContentSizeChange, ...props }, ref) => {
+  ({ onChangeText, onChange, onRichSnapshot, onSelectionChange, onEditTap, onContentSizeChange, onUndoStateChange, ...props }, ref) => {
     const [snapshotNonce, setSnapshotNonce] = useState(0);
     const [focusNonce, setFocusNonce] = useState(0);
+    const [undoNonce, setUndoNonce] = useState(0);
+    const [redoNonce, setRedoNonce] = useState(0);
 
     const handleChange = useCallback(
       (e: NativeChangeEvent) => {
@@ -141,6 +156,16 @@ export const GlideRichTextEditor = forwardRef<GlideRichTextEditorHandle, GlideRi
       [onContentSizeChange]
     );
 
+    const handleUndoStateChange = useCallback(
+      (e: NativeUndoStateChangeEvent) => {
+        onUndoStateChange?.({
+          canUndo: e.nativeEvent.canUndo,
+          canRedo: e.nativeEvent.canRedo,
+        });
+      },
+      [onUndoStateChange]
+    );
+
     // Prop-based trigger: incrementing snapshotNonce causes the native view to
     // capture an RTF snapshot and fire onRichSnapshot.  This avoids command
     // dispatch which doesn't work through the New Architecture interop layer.
@@ -149,6 +174,8 @@ export const GlideRichTextEditor = forwardRef<GlideRichTextEditorHandle, GlideRi
     useImperativeHandle(ref, () => ({
       requestRtfSnapshot: () => setSnapshotNonce(n => n + 1),
       focus: () => setFocusNonce(n => n + 1),
+      undo: () => setUndoNonce(n => n + 1),
+      redo: () => setRedoNonce(n => n + 1),
     }));
 
     if (Platform.OS !== 'ios') {
@@ -175,11 +202,14 @@ export const GlideRichTextEditor = forwardRef<GlideRichTextEditorHandle, GlideRi
         {...props}
         snapshotNonce={snapshotNonce}
         focusNonce={focusNonce}
+        undoNonce={undoNonce}
+        redoNonce={redoNonce}
         onChange={handleChange}
         onRichSnapshot={handleRichSnapshot}
         onSelectionChange={handleSelectionChange}
         onEditTap={handleEditTap}
         onContentSizeChange={handleContentSizeChange}
+        onUndoStateChange={handleUndoStateChange}
       />
     );
   }

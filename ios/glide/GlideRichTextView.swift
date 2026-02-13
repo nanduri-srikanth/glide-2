@@ -99,6 +99,9 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
   private var debounceTimer: Timer?
   private var tapToEditRecognizer: UITapGestureRecognizer?
   private var lastContentHeight: CGFloat = 0
+  private var hasEmittedUndoState = false
+  private var lastCanUndo = false
+  private var lastCanRedo = false
 
   // MARK: - React Props
 
@@ -108,11 +111,12 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
       // reset content explicitly, but avoid infinite loops when native emits changes.
       let next = content as String
       if next == textView.text { return }
-      isApplyingContentFromJS = true
-      textView.text = next
-      isApplyingContentFromJS = false
+      applyContentFromJS {
+        textView.text = next
+      }
       updatePlaceholderVisibility()
       emitContentSizeIfNeeded()
+      emitUndoStateIfNeeded(force: true)
     }
   }
 
@@ -143,25 +147,26 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
           options: [.documentType: NSAttributedString.DocumentType.rtf],
           documentAttributes: nil
         )
-        isApplyingContentFromJS = true
-        lastAppliedRtfBase64 = next
-        textView.attributedText = attr
-        // After setting attributedText, normalize paragraph style for visual consistency
-        let mutable = NSMutableAttributedString(attributedString: textView.attributedText ?? NSAttributedString())
-        let fullRange = NSRange(location: 0, length: mutable.length)
-        if fullRange.length > 0 {
-          mutable.addAttribute(.paragraphStyle, value: defaultParagraphStyle(), range: fullRange)
-          let savedRange = textView.selectedRange
-          textView.attributedText = mutable
-          textView.selectedRange = savedRange
+        applyContentFromJS {
+          lastAppliedRtfBase64 = next
+          textView.attributedText = attr
+          // After setting attributedText, normalize paragraph style for visual consistency
+          let mutable = NSMutableAttributedString(attributedString: textView.attributedText ?? NSAttributedString())
+          let fullRange = NSRange(location: 0, length: mutable.length)
+          if fullRange.length > 0 {
+            mutable.addAttribute(.paragraphStyle, value: defaultParagraphStyle(), range: fullRange)
+            let savedRange = textView.selectedRange
+            textView.attributedText = mutable
+            textView.selectedRange = savedRange
+          }
+          // Move cursor to end.
+          let end = NSRange(location: (textView.attributedText?.length ?? attr.length), length: 0)
+          textView.selectedRange = end
+          lastSelectedRange = end
         }
-        // Move cursor to end.
-        let end = NSRange(location: (textView.attributedText?.length ?? attr.length), length: 0)
-        textView.selectedRange = end
-        lastSelectedRange = end
-        isApplyingContentFromJS = false
         updatePlaceholderVisibility()
         emitContentSizeIfNeeded()
+        emitUndoStateIfNeeded(force: true)
       } catch {
 #if DEBUG
         print("[GlideRichTextView] Failed to parse RTF: \(error)")
@@ -178,18 +183,19 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
       if hasAppliedInitialPlaintext { return }
 
       hasAppliedInitialPlaintext = true
-      isApplyingContentFromJS = true
-      textView.text = next
-      // After setting text, apply paragraph style
-      let mutable = NSMutableAttributedString(attributedString: textView.attributedText ?? NSAttributedString())
-      let fullRange = NSRange(location: 0, length: mutable.length)
-      if fullRange.length > 0 {
-        mutable.addAttribute(.paragraphStyle, value: defaultParagraphStyle(), range: fullRange)
-        textView.attributedText = mutable
+      applyContentFromJS {
+        textView.text = next
+        // After setting text, apply paragraph style
+        let mutable = NSMutableAttributedString(attributedString: textView.attributedText ?? NSAttributedString())
+        let fullRange = NSRange(location: 0, length: mutable.length)
+        if fullRange.length > 0 {
+          mutable.addAttribute(.paragraphStyle, value: defaultParagraphStyle(), range: fullRange)
+          textView.attributedText = mutable
+        }
       }
-      isApplyingContentFromJS = false
       updatePlaceholderVisibility()
       emitContentSizeIfNeeded()
+      emitUndoStateIfNeeded(force: true)
 #if DEBUG
       print("[GlideRichTextView] Applied initialPlaintext (\(next.count) chars)")
 #endif
@@ -206,12 +212,13 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
       if hasAppliedInitialPlaintext { return }
 
       hasAppliedInitialPlaintext = true
-      isApplyingContentFromJS = true
-      let attributed = parseMarkdownToAttributedString(next)
-      textView.attributedText = attributed
-      isApplyingContentFromJS = false
+      applyContentFromJS {
+        let attributed = parseMarkdownToAttributedString(next)
+        textView.attributedText = attributed
+      }
       updatePlaceholderVisibility()
       emitContentSizeIfNeeded()
+      emitUndoStateIfNeeded(force: true)
 #if DEBUG
       print("[GlideRichTextView] Applied initialMarkdown (\(next.count) chars)")
 #endif
@@ -262,14 +269,41 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
     }
   }
 
+  private var lastUndoNonce: Int = 0
+  @objc var undoNonce: NSNumber = 0 {
+    didSet {
+      let nonce = undoNonce.intValue
+      if nonce > 0 && nonce != lastUndoNonce {
+        lastUndoNonce = nonce
+        undo()
+      }
+    }
+  }
+
+  private var lastRedoNonce: Int = 0
+  @objc var redoNonce: NSNumber = 0 {
+    didSet {
+      let nonce = redoNonce.intValue
+      if nonce > 0 && nonce != lastRedoNonce {
+        lastRedoNonce = nonce
+        redo()
+      }
+    }
+  }
+
   @objc var editable: Bool = true {
     didSet {
+      let wasEditable = oldValue
       textView.isEditable = editable
       // No accessory toolbar; selection menu handles formatting.
       if textView.isFirstResponder {
         textView.reloadInputViews()
       }
       tapToEditRecognizer?.isEnabled = !editable
+      if editable && !wasEditable {
+        textView.undoManager?.removeAllActions()
+      }
+      emitUndoStateIfNeeded(force: true)
     }
   }
 
@@ -290,6 +324,7 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
   @objc var onRichSnapshot: RCTBubblingEventBlock?
   @objc var onSelectionChange: RCTDirectEventBlock?
   @objc var onContentSizeChange: RCTDirectEventBlock?
+  @objc var onUndoStateChange: RCTDirectEventBlock?
 
   // MARK: - Init
 
@@ -827,10 +862,47 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
     // Re-measure after layout so the JS side gets an accurate height.
     // The abs() guard in emitContentSizeIfNeeded prevents infinite loops.
     emitContentSizeIfNeeded()
+    emitUndoStateIfNeeded()
   }
 
   private func updatePlaceholderVisibility() {
     placeholderLabel.isHidden = !textView.text.isEmpty || (placeholder as String).isEmpty
+  }
+
+  private func applyContentFromJS(_ apply: () -> Void) {
+    isApplyingContentFromJS = true
+    defer { isApplyingContentFromJS = false }
+    apply()
+    // Avoid manual enable/disable toggling: UITextView/TextKit may manage
+    // registration internally and mismatched calls can crash with NSUndoManager.
+    textView.undoManager?.removeAllActions()
+  }
+
+  private func emitCurrentChange() {
+    guard let onChange = onChange else { return }
+    let selection = textView.selectedRange
+    onChange([
+      "text": textView.text ?? "",
+      "selectionStart": selection.location,
+      "selectionEnd": selection.location + selection.length,
+    ])
+  }
+
+  private func emitUndoStateIfNeeded(force: Bool = false) {
+    guard let onUndoStateChange = onUndoStateChange else { return }
+    let canUndo = textView.undoManager?.canUndo ?? false
+    let canRedo = textView.undoManager?.canRedo ?? false
+    if !force && hasEmittedUndoState && canUndo == lastCanUndo && canRedo == lastCanRedo {
+      return
+    }
+
+    hasEmittedUndoState = true
+    lastCanUndo = canUndo
+    lastCanRedo = canRedo
+    onUndoStateChange([
+      "canUndo": canUndo,
+      "canRedo": canRedo,
+    ])
   }
 
   // MARK: - UITextViewDelegate
@@ -842,17 +914,13 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
     if isApplyingContentFromJS { return }
 
     lastSelectedRange = textView.selectedRange
+    emitUndoStateIfNeeded()
 
     // Debounce onChange to ~300ms to avoid excessive JS bridge traffic.
     debounceTimer?.invalidate()
     debounceTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { [weak self] _ in
       guard let self = self else { return }
-      let selection = self.textView.selectedRange
-      self.onChange?([
-        "text": self.textView.text ?? "",
-        "selectionStart": selection.location,
-        "selectionEnd": selection.location + selection.length,
-      ])
+      self.emitCurrentChange()
     }
   }
 
@@ -892,6 +960,7 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
   func textViewDidBeginEditing(_ textView: UITextView) {
     // Fire initial selection event so JS can scroll to caret position
     textViewDidChangeSelection(textView)
+    emitUndoStateIfNeeded(force: true)
   }
 
   private func emitContentSizeIfNeeded() {
@@ -944,6 +1013,30 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
     return textView.text ?? ""
   }
 
+  // MARK: - Undo / Redo
+
+  func undo() {
+    guard editable else { return }
+    _ = textView.becomeFirstResponder()
+    debounceTimer?.invalidate()
+    textView.undoManager?.undo()
+    updatePlaceholderVisibility()
+    emitContentSizeIfNeeded()
+    emitCurrentChange()
+    emitUndoStateIfNeeded(force: true)
+  }
+
+  func redo() {
+    guard editable else { return }
+    _ = textView.becomeFirstResponder()
+    debounceTimer?.invalidate()
+    textView.undoManager?.redo()
+    updatePlaceholderVisibility()
+    emitContentSizeIfNeeded()
+    emitCurrentChange()
+    emitUndoStateIfNeeded(force: true)
+  }
+
   // MARK: - Formatting Commands
 
   private func prepareForFormatting() {
@@ -965,6 +1058,7 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
 #endif
     prepareForFormatting()
     toggleFontTrait(.traitBold)
+    emitUndoStateIfNeeded(force: true)
   }
 
   func toggleItalic() {
@@ -973,6 +1067,7 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
 #endif
     prepareForFormatting()
     toggleFontTrait(.traitItalic)
+    emitUndoStateIfNeeded(force: true)
   }
 
   func toggleUnderline() {
@@ -981,6 +1076,7 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
 #endif
     prepareForFormatting()
     toggleTextStyleAttribute(.underlineStyle, onValue: NSUnderlineStyle.single.rawValue as NSNumber, offValue: 0 as NSNumber)
+    emitUndoStateIfNeeded(force: true)
   }
 
   func toggleStrikethrough() {
@@ -989,6 +1085,7 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
 #endif
     prepareForFormatting()
     toggleTextStyleAttribute(.strikethroughStyle, onValue: NSUnderlineStyle.single.rawValue as NSNumber, offValue: 0 as NSNumber)
+    emitUndoStateIfNeeded(force: true)
   }
 
   func toggleHighlight() {
@@ -998,6 +1095,7 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
     prepareForFormatting()
     let onColor = UIColor.systemYellow.withAlphaComponent(0.35)
     toggleTextStyleAttribute(.backgroundColor, onValue: onColor, offValue: UIColor.clear)
+    emitUndoStateIfNeeded(force: true)
   }
 
   func clearFormatting() {
@@ -1027,6 +1125,7 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
       .foregroundColor: UIColor.label,
       .paragraphStyle: defaultParagraphStyle(),
     ]
+    emitUndoStateIfNeeded(force: true)
   }
 
   // MARK: - List & Indent Commands
@@ -1122,6 +1221,7 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
       }
     }
     storage.endEditing()
+    emitUndoStateIfNeeded(force: true)
   }
 
   func toggleNumberedList() {
@@ -1181,6 +1281,7 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
       }
     }
     storage.endEditing()
+    emitUndoStateIfNeeded(force: true)
   }
 
   func increaseIndent() {
@@ -1197,6 +1298,7 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
       storage.addAttribute(.paragraphStyle, value: style, range: subrange)
     }
     storage.endEditing()
+    emitUndoStateIfNeeded(force: true)
   }
 
   func decreaseIndent() {
@@ -1213,6 +1315,7 @@ final class GlideRichTextView: UIView, UITextViewDelegate, FormattingTextViewDel
       storage.addAttribute(.paragraphStyle, value: style, range: subrange)
     }
     storage.endEditing()
+    emitUndoStateIfNeeded(force: true)
   }
 
   // MARK: - FormattingTextViewDelegate

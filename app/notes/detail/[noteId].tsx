@@ -202,6 +202,9 @@ export default function NoteDetailScreen() {
   const [editedTranscript, setEditedTranscript] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [hasSessionEdits, setHasSessionEdits] = useState(false);
+  const [canUndoRichEdit, setCanUndoRichEdit] = useState(false);
+  const editSessionStartRef = useRef<{ title: string; transcript: string } | null>(null);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const titleInputRef = useRef<TextInput>(null);
   const transcriptInputRef = useRef<TextInput>(null);
@@ -346,8 +349,13 @@ export default function NoteDetailScreen() {
 
   // Handle text changes with debounce
   const handleTitleChange = useCallback((text: string) => {
+    if (text === editedTitle) return;
+
     setEditedTitle(text);
     setHasUnsavedChanges(true);
+    if (!richEditorEnabled) {
+      setHasSessionEdits(true);
+    }
 
     // Mark as user-edited if they typed something meaningful
     if (text.trim().length > 0) {
@@ -376,11 +384,16 @@ export default function NoteDetailScreen() {
     saveTimeoutRef.current = setTimeout(() => {
       debouncedSave(titleToSave, editedTranscript);
     }, 1500);
-  }, [editedTranscript, debouncedSave]);
+  }, [editedTranscript, debouncedSave, richEditorEnabled]);
 
   const handleTranscriptChange = useCallback((text: string) => {
+    if (text === editedTranscript) return;
+
     setEditedTranscript(text);
     setHasUnsavedChanges(true);
+    if (!richEditorEnabled) {
+      setHasSessionEdits(true);
+    }
 
     // Clear existing timeout
     if (saveTimeoutRef.current) {
@@ -401,7 +414,7 @@ export default function NoteDetailScreen() {
     saveTimeoutRef.current = setTimeout(() => {
       debouncedSave(titleToSave, text);
     }, 1500);
-  }, [editedTitle, userEditedTitle, debouncedSave]);
+  }, [editedTitle, userEditedTitle, debouncedSave, richEditorEnabled]);
 
   // Auto-scroll so caret sits at ~25% down the visible viewport
   // Throttled with comfort band to reduce jitter during continuous typing
@@ -456,7 +469,14 @@ export default function NoteDetailScreen() {
       Alert.alert('Sign In Required', 'Please sign in to edit notes.');
       return;
     }
+    // Snapshot content at the start of this edit session for reliable undo.
+    editSessionStartRef.current = {
+      title: editedTitle,
+      transcript: editedTranscript,
+    };
     setIsEditing(true);
+    setHasSessionEdits(false);
+    setCanUndoRichEdit(false);
     setTagsExpanded(false);
     if (richEditorEnabled) {
       // Small delay to let editable prop propagate before focusing
@@ -464,7 +484,7 @@ export default function NoteDetailScreen() {
     } else {
       setTimeout(() => transcriptInputRef.current?.focus(), 100);
     }
-  }, [isAuthenticated, richEditorEnabled]);
+  }, [isAuthenticated, richEditorEnabled, editedTitle, editedTranscript]);
 
   // Handle tap-to-edit from native GlideRichTextEditor (replaces Pressable overlay)
   const handleEditTap = useCallback((e: { tapOffset: number; tapY: number }) => {
@@ -495,6 +515,9 @@ export default function NoteDetailScreen() {
 
     Keyboard.dismiss();
     setIsEditing(false);
+    setHasSessionEdits(false);
+    setCanUndoRichEdit(false);
+    editSessionStartRef.current = null;
   }, [hasUnsavedChanges, editedTitle, editedTranscript, updateNote, richEditorEnabled]);
 
   // Handle blur - exit edit mode if neither field is focused
@@ -910,25 +933,49 @@ export default function NoteDetailScreen() {
     );
   };
 
-  const handleUndoLocalChanges = useCallback(() => {
-    if (!note) return;
+  const handleUndoLocalChanges = () => {
+    const sessionStart = editSessionStartRef.current;
+    if (!sessionStart && !note) return;
 
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
 
-    setEditedTitle(note.title);
-    setEditedTranscript(note.transcript);
-    originalTitleRef.current = note.title;
-    setUserEditedTitle(isUserSetTitle(note.title));
-    setHasUnsavedChanges(false);
+    const undoTitle = sessionStart?.title ?? note!.title;
+    const undoTranscript = sessionStart?.transcript ?? note!.transcript;
+
+    setEditedTitle(undoTitle);
+    setEditedTranscript(undoTranscript);
+    originalTitleRef.current = undoTitle;
+    setUserEditedTitle(isUserSetTitle(undoTitle));
+
+    // If auto-save already pushed newer content, keep this "dirty" so leaving edit persists the undo.
+    const differsFromCurrentNote = !!note && (
+      note.title !== undoTitle || note.transcript !== undoTranscript
+    );
+    setHasUnsavedChanges(differsFromCurrentNote);
+    setHasSessionEdits(false);
 
     // Force rich editor to reload from the latest server-backed plain content.
     if (richEditorEnabled) {
       setRichRtfBase64(undefined);
       setRichEditorKey(prev => prev + 1);
     }
-  }, [note, richEditorEnabled]);
+  };
+
+  const handleRichUndoStateChange = (state: { canUndo: boolean; canRedo: boolean }) => {
+    setCanUndoRichEdit(prev => (prev === state.canUndo ? prev : state.canUndo));
+  };
+
+  const showUndoButton = isEditing && (richEditorEnabled ? canUndoRichEdit : hasSessionEdits);
+
+  const handleUndoPress = () => {
+    if (richEditorEnabled) {
+      richEditorRef.current?.undo();
+      return;
+    }
+    handleUndoLocalChanges();
+  };
 
   // Calculate action counts for the floating bar (excluding deleted)
   const actionCounts: ActionCounts = {
@@ -971,9 +1018,9 @@ export default function NoteDetailScreen() {
           ),
           headerRight: () => (
             <View style={styles.headerRightContainer}>
-              {hasUnsavedChanges && (
+              {showUndoButton && (
                 <TouchableOpacity
-                  onPress={handleUndoLocalChanges}
+                  onPress={handleUndoPress}
                   style={styles.headerActionButton}
                   activeOpacity={0.7}
                   accessibilityRole="button"
@@ -982,7 +1029,7 @@ export default function NoteDetailScreen() {
                   <IconSymbol
                     name="arrow.uturn.backward"
                     size={22}
-                    color="#111111"
+                    color={NotesColors.primary}
                     weight="medium"
                   />
                 </TouchableOpacity>
@@ -1233,6 +1280,7 @@ export default function NoteDetailScreen() {
               onRichSnapshot={handleRichSnapshot}
               onSelectionChange={handleSelectionChange}
               onContentSizeChange={handleContentSizeChange}
+              onUndoStateChange={handleRichUndoStateChange}
               placeholder="Start typing..."
               style={[styles.richEditor, { height: richEditorHeight }]}
               {...({ onEditTap: handleEditTap } as any)}
